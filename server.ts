@@ -438,11 +438,12 @@ async function refreshActivity() {
 
 function snapshot() {
   return { now: Date.now(), machines: Object.values(machines), live: [...live.values()].sort((a, b) => b.startedAt - a.startedAt),
-    recent: history.filter((j) => (j.endedAt ?? 0) > Date.now() - 86400e3).slice(0, 200), progress: progress(), chats: [...livePids.values()], activity };
+    recent: history.filter((j) => (j.endedAt ?? 0) > Date.now() - 86400e3).slice(0, 200), progress: progress(), chats: [...livePids.values()], activity, version: VERSION };
 }
 
 // ---------- real previews of output files ----------
 // Only files JobTrail itself listed for a job (its log or outputs) can be previewed or fetched.
+const VERSION = (() => { try { return Bun.hash(readdirSync(PUBLIC).sort().map((f) => { try { return f + readFileSync(join(PUBLIC, f)).length + statSync(join(PUBLIC, f)).mtimeMs; } catch { return f; } }).join("|")).toString(36); } catch { return "0"; } })();
 const THUMBS = join(DATA, "thumbs"); mkdirSync(THUMBS, { recursive: true });
 function allowed(id: string, path: string) {
   const j = live.get(id) ?? history.find((h) => h.id === id);
@@ -571,7 +572,7 @@ async function route(req: Request, srv: any): Promise<Response> {
       return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
     }
     const f = join(PUBLIC, url.pathname === "/" ? "index.html" : url.pathname.replace(/\.\.+/g, ""));
-    if (existsSync(f) && statSync(f).isFile()) return new Response(Bun.file(f));
+    if (existsSync(f) && statSync(f).isFile()) return new Response(Bun.file(f), { headers: { "Cache-Control": "no-cache" } });
     return new Response("not found", { status: 404 });
   }
 }

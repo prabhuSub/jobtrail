@@ -44,7 +44,7 @@ writeFileSync(join(ios, "Sources/Info.plist"), `<?xml version="1.0" encoding="UT
 // icon: same mark as the Mac app
 mkdirSync(B, { recursive: true });
 await $`swiftc -o ${B}/mkicon ${root}/app/icon.swift -framework AppKit`.quiet();
-await $`${B}/mkicon ${B}/icon.png`.quiet();
+await $`${B}/mkicon ${B}/icon.png full`.quiet();
 await $`sips -s format png -s hasAlpha no ${B}/icon.png --out ${ios}/Sources/Assets.xcassets/AppIcon.appiconset/icon.png`.quiet().nothrow();
 
 await $`cd ${ios} && xcodegen generate --quiet`;

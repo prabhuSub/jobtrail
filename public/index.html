@@ -346,6 +346,20 @@ details.svc[open]>summary h2:after{content:" ↑"}
 .split:hover span,.split.drag span{background:var(--accent);width:64px}
 .map{border-bottom:0}
 @media (max-width:719px){.split{display:none}}
+.bnav{display:none}
+.tab{white-space:nowrap}
+@media (max-width:719px){.switcher .tab{font-size:13px;padding:4px 6px}}
+@media (max-width:719px){
+  .bnav{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;justify-content:space-around;padding:6px 6px calc(6px + env(safe-area-inset-bottom));
+    background:rgba(12,12,12,.86);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);border-top:1px solid var(--hover)}
+  .bnav button{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0 2px;border:0;background:transparent;color:var(--dim);font:500 10px/12px var(--font);border-radius:10px;-webkit-tap-highlight-color:transparent}
+  .bnav button:active{background:var(--hover);color:var(--text)}
+  .bnav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .bnav .runbtn{color:var(--success)}
+  .bnav i{position:absolute;top:2px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--success);color:#000;font:700 10px/16px var(--mono);font-style:normal}
+  main{padding-bottom:calc(90px + env(safe-area-inset-bottom))}
+  .fcard.sheet{bottom:calc(58px + env(safe-area-inset-bottom));max-height:calc(82dvh - 60px);border-radius:20px;left:6px!important;right:6px;padding-bottom:0}
+}
 </style>
 </head>
 <body>
@@ -362,6 +376,13 @@ details.svc[open]>summary h2:after{content:" ↑"}
 <main>
   <div id="list"></div>
 </main>
+<nav class="bnav" id="bnav">
+  <button onclick="navMap()"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.4"/><circle cx="19" cy="6" r="2.4"/><circle cx="19" cy="18" r="2.4"/><path d="M7 11l10-4M7 13l10 4"/></svg><span>Map</span></button>
+  <button onclick="navJobs()"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Jobs</span></button>
+  <button onclick="navRunning()" class="runbtn"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg><span>Running</span><i id="bnRun"></i></button>
+  <button onclick="navMachines()"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="10" rx="1.6"/><path d="M2 19h20"/></svg><span>Macs</span></button>
+  <button onclick="hardReload()"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg><span>Refresh</span></button>
+</nav>
 <script src="/map.js"></script>
 <script>
 const $=s=>document.querySelector(s);
@@ -380,7 +401,10 @@ const cssId=id=>id.replace(/[^a-z0-9]/gi,'_');
 
 function connect(){
   const es=new EventSource('/api/stream');
-  es.onmessage=e=>{S=JSON.parse(e.data);lastMsg=Date.now();render()};
+  es.onmessage=e=>{S=JSON.parse(e.data);lastMsg=Date.now();
+    // a rebuilt app (new page files) reaches every open window and the phone by itself
+    if(S.version){if(window.jtVersion&&window.jtVersion!==S.version){hardReload();return}window.jtVersion=S.version}
+    render()};
   es.onerror=()=>{$('#watch').textContent='reconnecting…';$('#watch').classList.add('stale')};
 }
 const visible=j=>filter==='all'||j.machine===filter;
@@ -396,6 +420,7 @@ function render(){
   $('#tabs').style.display=S.machines.length>1?'':'none';
   const running=live.filter(j=>j.state==='running').length,waiting=live.filter(j=>j.state==='waiting').length;
   $('#runBadge').className='badge'+(running?' working':'');
+  const bn=document.getElementById('bnRun');if(bn){bn.textContent=running||'';bn.style.display=running?'':'none'}
   $('#runBadge').innerHTML=`<span class="dot"></span><span>${running} running${waiting?` · ${waiting} waiting`:''}</span>`;
   const groups=new Map(),key=j=>j.chat?.sessionId||'__none';
   for(const j of [...live,...recent].filter(visible)){if(!groups.has(key(j)))groups.set(key(j),{chat:j.chat,jobs:[]});groups.get(key(j)).jobs.push(j)}
@@ -455,6 +480,26 @@ async function fetchDetail(id){
 async function loadHist(){histAt=Date.now();try{const r=await fetch('/api/history?days='+range);hist=await r.json();render()}catch{}}
 function setRange(k){range=k;localSet('jt.range',k);hist=null;histAt=0;render()}
 function pick(id){if(!open.has(id)){open.add(id);fetchDetail(id)}render();const el=document.getElementById('d-'+cssId(id));const row=el?.previousElementSibling;if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.classList.add('flash')}}
+function hardReload(){const u=new URL(location.href);u.searchParams.set('r',Date.now().toString(36));location.replace(u.toString())}
+// coming back to the phone app: the live stream may have died in the background
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&lastMsg&&Date.now()-lastMsg>8000)hardReload()});
+// ---- phone navigation ----
+function navMap(){JobMap.card.close();scrollTo({top:0,behavior:'smooth'})}
+function navJobs(){JobMap.card.close();const el=document.getElementById('list');scrollTo({top:el.getBoundingClientRect().top+scrollY-70,behavior:'smooth'})}
+function navRunning(){
+  const live=S?S.live.filter(j=>j.kind==='job'):[],mn=id=>esc(S.machines.find(m=>m.id===id)?.name||id);
+  const row=j=>`<button class="jrow ${j.state}" data-open="j:${esc(j.id)}"><span class="fst ${j.state}"></span><b>${esc(j.label)}</b><span>${mn(j.machine)} · ${dur(Date.now()-j.startedAt)}</span></button>`;
+  const run=live.filter(j=>j.state==='running'),wait=live.filter(j=>j.state!=='running');
+  const ended=(S?.recent||[]).filter(j=>j.kind==='job').slice(0,6);
+  JobMap.card.custom(`<span class="fst running"></span><div><b>${run.length} running · ${wait.length} waiting</b><span>tap a job for its details</span></div>`,
+    `${run.length?`<div class="dsec"><div class="k">Running</div>${run.map(row).join('')}</div>`:''}${wait.length?`<div class="dsec"><div class="k">Waiting</div>${wait.map(row).join('')}</div>`:''}${!live.length?'<div class="dsec muted">Nothing running right now.</div>':''}
+     ${ended.length?`<div class="dsec"><div class="k">Just finished</div>${ended.map(j=>`<button class="jrow ${j.state}" data-pick="${esc(j.id)}"><span class="fst ${j.state}"></span><b>${esc(j.label)}</b><span>${esc(j.state)} · ${ago(j.endedAt)}</span></button>`).join('')}</div>`:''}`);
+}
+function navMachines(){
+  const ms=S?.machines||[];
+  JobMap.card.custom(`<span class="fst running"></span><div><b>Macs</b><span>tap one for GPU, memory and its jobs</span></div>`,
+    `<div class="dsec">${ms.map(m=>{const n=S.live.filter(j=>j.machine===m.id&&j.kind==='job').length;return`<button class="jrow" data-open="m:${esc(m.id)}"><span class="fst ${m.online?'running':'failed'}"></span><b>${esc(m.name)}</b><span>GPU ${m.gpu??'—'}% · mem ${m.memFree??'—'}% free · ${n} job${n===1?'':'s'}</span></button>`}).join('')}</div>`);
+}
 function setFilter(m){filter=m;localSet('jt.filter',m);render()}
 function tick(){
   document.querySelectorAll('[data-start]').forEach(e=>e.textContent=dur(Date.now()-+e.dataset.start));

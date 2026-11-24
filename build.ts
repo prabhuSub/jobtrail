@@ -13,6 +13,11 @@ mkdirSync(join(B, "icon.iconset"), { recursive: true });
 await $`swiftc -O -o ${B}/JobTrail ${root}/app/main.swift -framework Cocoa -framework WebKit`;
 await $`swiftc -o ${B}/mkicon ${root}/app/icon.swift -framework AppKit`;
 await $`${B}/mkicon ${B}/icon.png`;
+// phone / Home Screen icons: full-bleed and opaque, or iOS adds a white border
+await $`${B}/mkicon ${B}/icon-full.png full`;
+await $`sips -s format jpeg -s formatOptions best ${B}/icon-full.png --out ${B}/icon-full.jpg`.quiet(); // drops the alpha channel
+await $`sips -s format png -Z 180 ${B}/icon-full.jpg --out ${root}/public/apple-touch-icon.png`.quiet();
+await $`sips -s format png -Z 512 ${B}/icon-full.jpg --out ${root}/public/icon-512.png`.quiet();
 for (const s of [16, 32, 128, 256, 512]) {
   await $`sips -z ${s} ${s} ${B}/icon.png --out ${B}/icon.iconset/icon_${s}x${s}.png`.quiet();
   await $`sips -z ${s * 2} ${s * 2} ${B}/icon.png --out ${B}/icon.iconset/icon_${s}x${s}@2x.png`.quiet();

@@ -1,11 +1,16 @@
-// Draws the JobTrail icon (Agent Trail palette: black tile, amber trail) to a 1024px PNG.
+// Draws the JobTrail icon (black tile, amber trail) to a 1024px PNG. Usage: mkicon out.png [full]
 import AppKit
 let size = 1024.0
 let img = NSImage(size: NSSize(width: size, height: size))
 img.lockFocus()
-let tile = NSBezierPath(roundedRect: NSRect(x: 100, y: 100, width: 824, height: 824), xRadius: 185, yRadius: 185)
-NSColor(calibratedWhite: 0.06, alpha: 1).setFill(); tile.fill()
-NSColor(calibratedWhite: 0.19, alpha: 1).setStroke(); tile.lineWidth = 6; tile.stroke()
+// "full": edge-to-edge opaque square for iPhone (iOS rounds the corners itself; transparency would turn white)
+let full = CommandLine.arguments.count > 2 && CommandLine.arguments[2] == "full"
+if full { NSColor(calibratedWhite: 0.06, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: size, height: size).fill() }
+else {
+  let tile = NSBezierPath(roundedRect: NSRect(x: 100, y: 100, width: 824, height: 824), xRadius: 185, yRadius: 185)
+  NSColor(calibratedWhite: 0.06, alpha: 1).setFill(); tile.fill()
+  NSColor(calibratedWhite: 0.19, alpha: 1).setStroke(); tile.lineWidth = 6; tile.stroke()
+}
 let amber = NSColor(calibratedRed: 0.914, green: 0.635, blue: 0.231, alpha: 1)
 let line = NSBezierPath(); line.move(to: NSPoint(x: 290, y: 300)); line.line(to: NSPoint(x: 512, y: 512)); line.line(to: NSPoint(x: 734, y: 724))
 NSColor(calibratedWhite: 0.25, alpha: 1).setStroke(); line.lineWidth = 22; line.lineCapStyle = .round; line.stroke()
