@@ -13,7 +13,7 @@ chat ──▶ the machine it runs on ──▶ each job ──▶ the file the 
 - **Tap anything** for a floating card: the live log, command, processes, CPU graph, and everything the job made. Audio and video play right in the card.
 - **Job list (bottom half):** every job grouped by chat, with 24 h, 7 day and 30 day history. Drag the bar between the halves to resize them.
 - **Always recording:** a small background server starts at login, so jobs are recorded even while the window is closed.
-- **On your phone:** click **iPhone** in the app, scan the QR code, then Add to Home Screen. It works over [Tailscale](https://tailscale.com), or on the same Wi-Fi. Access from any other device needs a private key.
+- **On your phone:** click **iPhone** in the app, scan the QR code, then Add to Home Screen. It works over [Tailscale](https://tailscale.com), which encrypts the connection. Access from any other device needs a private key.
 - Free, local, no accounts, no telemetry. Bun + TypeScript server, plain HTML/JS front end, tiny Swift window.
 
 ## Install
@@ -60,12 +60,12 @@ You can also use the environment variables `JOBTRAIL_REMOTE`, `JOBTRAIL_REMOTE_N
 
 ## Phone
 
-- **Home Screen web app (recommended):** click **iPhone** in the Mac app, scan the QR code, then Share → Add to Home Screen. The Mac must be awake.
+- **Home Screen web app (recommended):** click **iPhone** in the Mac app, scan the QR code, then Share → Add to Home Screen. Tailscale must be on, on both the Mac and the phone, and the Mac must be awake. The link is plain `http`, so it is only offered over Tailscale, which encrypts it; JobTrail never offers it over Wi-Fi.
 - **Native wrapper (optional):** run `JOBTRAIL_TEAM_ID=<your Apple team id> bun build-ios.ts` with the iPhone connected. It needs Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen). With a free Apple account the app expires after 7 days, and you can have only 3 such apps on the phone.
 
 ## Security
 
-- The server listens on port 4791 on all network interfaces so your phone can reach it. Requests from this Mac are always allowed; any other device needs the key in `~/.jobtrail/token`, sent as `?k=`, as a cookie, or in the `x-jobtrail-key` header.
+- The server listens on port 4791 on all network interfaces so your phone can reach it. Requests from this Mac are allowed only when addressed to `127.0.0.1` or `localhost`, and cross-site browser requests are refused (this blocks DNS-rebinding pages). Any other device needs the key in `~/.jobtrail/token`, sent as `?k=`, as a cookie, or in the `x-jobtrail-key` header.
 - Anyone with the key can see your chat titles, commands and logs, and open the files JobTrail lists. Treat the QR code like a password. To revoke it, delete `~/.jobtrail/token` and restart the recorder:
 
 ```bash

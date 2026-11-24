@@ -478,8 +478,8 @@ JobMap.init(document.getElementById('map'),pick);
 // iPhone: only offered on this Mac; shows a QR of the Tailscale link (with the access key)
 fetch('/api/phone').then(r=>r.ok?r.json():null).then(d=>{if(d?.url){window.phoneURL=d.url;window.phoneVia=d.via;document.getElementById('phoneBtn').hidden=false}}).catch(()=>{});
 function showPhone(){
-  JobMap.card.custom('<span class="fst running"></span><div><b>Open JobTrail on your iPhone</b><span>'+(window.phoneVia==='lan'?'same Wi-Fi only (install Tailscale to use it anywhere)':'over Tailscale · works anywhere')+'</span></div>',
-    '<div class="qrwrap"><div id="qr"></div><ol><li>Scan with the iPhone camera.</li><li>In Safari tap Share → <b>Add to Home Screen</b>.</li><li>Open JobTrail from the home screen.</li></ol></div><div class="dsec"><div class="k">Link <span>contains your private key</span></div><pre>'+esc(window.phoneURL)+'</pre></div>',540);
+  JobMap.card.custom('<span class="fst running"></span><div><b>Open JobTrail on your iPhone</b><span>over Tailscale (encrypted) · works anywhere</span></div>',
+    '<div class="qrwrap"><div id="qr"></div><ol><li>Scan with the iPhone camera (Tailscale on, on both).</li><li>In Safari tap Share → <b>Add to Home Screen</b>.</li><li>Open JobTrail from the home screen.</li></ol></div><div class="dsec"><div class="k">Link <span>contains your private key</span></div><pre>'+esc(window.phoneURL)+'</pre></div>',540);
   const go=()=>{document.getElementById('qr').innerHTML='';new QRCode(document.getElementById('qr'),{text:window.phoneURL,width:180,height:180,colorDark:'#000',colorLight:'#fff'})};
   if(window.QRCode)go();else{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';s.onload=go;document.head.appendChild(s)}
 }

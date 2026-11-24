@@ -534,7 +534,15 @@ async function route(req: Request, srv: any): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === "/health") return new Response("ok");
     const ip = srv.requestIP(req)?.address ?? "";
-    const local = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+    // "local" = this Mac's own app/browser. Loopback alone is not enough: a web page could DNS-rebind its own
+    // domain to 127.0.0.1, so the Host must also be a loopback name, and cross-site browser requests are refused.
+    const loopIP = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+    const host = (req.headers.get("host") ?? "").toLowerCase().replace(/:\d+$/, "");
+    const loopHost = host === "127.0.0.1" || host === "localhost" || host === "[::1]";
+    const site = req.headers.get("sec-fetch-site"), origin = req.headers.get("origin");
+    const crossSite = site === "cross-site" || (!!origin && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin) && loopIP);
+    if (crossSite) return new Response("JobTrail: cross-site request refused", { status: 403 });
+    const local = loopIP && loopHost;
     const cookie = /(?:^|;\s*)jt=([a-f0-9]+)/.exec(req.headers.get("cookie") ?? "")?.[1];
     const given = url.searchParams.get("k") ?? cookie ?? req.headers.get("x-jobtrail-key");
     if (!local && given !== TOKEN) return new Response("JobTrail: key required", { status: 401 });
@@ -543,10 +551,8 @@ async function route(req: Request, srv: any): Promise<Response> {
     if (url.pathname === "/api/phone") {
       if (!local) return new Response("no", { status: 403 });
       const ip = /inet (100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+)/.exec((await run(["/sbin/ifconfig"], 4000)).out)?.[1];
-      // Tailscale address if present (works anywhere), else this Mac's local-network address (same Wi-Fi only)
-      const lan = /inet ((?:192\.168|10)\.\d+\.\d+(?:\.\d+)?|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)/.exec((await run(["/sbin/ifconfig"], 4000)).out)?.[1];
-      const host = ip ?? lan;
-      return Response.json({ url: host ? `http://${host}:${PORT}/?k=${TOKEN}` : null, via: ip ? "tailscale" : "lan" });
+      // Tailscale only: its traffic is encrypted end to end, so the key never crosses Wi-Fi in clear text
+      return Response.json({ url: ip ? `http://${ip}:${PORT}/?k=${TOKEN}` : null, via: "tailscale" });
     }
     if (url.pathname === "/api/preview") return preview(url.searchParams.get("id") ?? "", url.searchParams.get("path") ?? "", url.searchParams.get("m") ?? "");
     if (url.pathname === "/api/file") return rawFile(url.searchParams.get("id") ?? "", url.searchParams.get("path") ?? "", req);

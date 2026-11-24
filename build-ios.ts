@@ -11,8 +11,9 @@ const root = import.meta.dir, ios = join(root, "ios"), B = join(root, "build-ios
 const key = readFileSync(join(homedir(), ".jobtrail/token"), "utf8").trim();
 const ts = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
 const tsIP = existsSync(ts) ? (await $`${ts} ip -4`.nothrow().text()).trim() : "";
-const lhn = (await $`scutil --get LocalHostName`.nothrow().text()).trim();
-const hosts = [tsIP, lhn ? `${lhn}.local` : ""].filter(Boolean).join(",");
+// Tailscale only: plain http to the Mac is safe there because Tailscale encrypts the link
+const hosts = tsIP;
+if (!hosts) throw new Error("Tailscale is not running on this Mac; the phone app connects over Tailscale only.");
 const TEAM = process.env.JOBTRAIL_TEAM_ID ?? "";
 if (!TEAM) throw new Error("Set JOBTRAIL_TEAM_ID (Xcode → Settings → Accounts, or the OU of your Apple Development certificate).");
 const BUNDLE = process.env.JOBTRAIL_BUNDLE_ID ?? `local.jobtrail.${TEAM.toLowerCase()}`;
