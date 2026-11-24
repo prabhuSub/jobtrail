@@ -1,0 +1,5 @@
+{
+  "local": { "name": "MacBook Pro", "device": "laptop" },
+  "remote": { "host": "my-mac-mini", "name": "Mac mini", "device": "desktop" },
+  "progressFile": null
+}

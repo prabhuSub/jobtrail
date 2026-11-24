@@ -1,0 +1,8 @@
+build/
+build-ios/
+ios/JobTrail.xcodeproj/
+ios/Sources/Info.plist
+ios/Sources/Assets.xcassets/AppIcon.appiconset/icon.png
+node_modules/
+.DS_Store
+*.part
