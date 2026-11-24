@@ -4,6 +4,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { basename, join } from "path";
+import { demoSnapshot, demoHistory, demoDetail, demoPreview, demoFile } from "./demo.ts";
+const DEMO = !!process.env.JOBTRAIL_DEMO; // made-up chats and jobs: try it or take screenshots without real sessions
 
 const HOME = homedir();
 const PORT = Number(process.env.JOBTRAIL_PORT ?? 4791);
@@ -437,6 +439,7 @@ async function refreshActivity() {
 }
 
 function snapshot() {
+  if (DEMO) return demoSnapshot(VERSION);
   return { now: Date.now(), machines: Object.values(machines), live: [...live.values()].sort((a, b) => b.startedAt - a.startedAt),
     recent: history.filter((j) => (j.endedAt ?? 0) > Date.now() - 86400e3).slice(0, 200), progress: progress(), chats: [...livePids.values()], activity, version: VERSION };
 }
@@ -549,6 +552,14 @@ async function route(req: Request, srv: any): Promise<Response> {
     if (!local && given !== TOKEN) return new Response("JobTrail: key required", { status: 401 });
     // keep ?k in the address (so "Add to Home Screen" saves a working link) and also set the cookie
     if (!local && url.searchParams.get("k") === TOKEN && !cookie) (req as any).jtSetCookie = true;
+    if (DEMO) {
+      const id = url.searchParams.get("id") ?? "", p = url.searchParams.get("path") ?? "";
+      if (url.pathname === "/api/history") return Response.json(demoHistory(Number(url.searchParams.get("days") ?? 7) || 7));
+      if (url.pathname === "/api/detail") return Response.json(demoDetail(id));
+      if (url.pathname === "/api/preview") return demoPreview(p);
+      if (url.pathname === "/api/file") return demoFile(p);
+      if (url.pathname === "/api/phone") return Response.json({ url: "http://100.64.0.7:4791/?k=demo-key-not-real", via: "tailscale" });
+    }
     if (url.pathname === "/api/phone") {
       if (!local) return new Response("no", { status: 403 });
       const ip = /inet (100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+)/.exec((await run(["/sbin/ifconfig"], 4000)).out)?.[1];
@@ -578,4 +589,5 @@ async function route(req: Request, srv: any): Promise<Response> {
 }
 setInterval(() => { for (const c of clients) { try { c.enqueue(": ping\n\n"); } catch { clients.delete(c); } } }, 15000);
 console.log(`jobtrail · http://127.0.0.1:${PORT} (other devices need the key in ~/.jobtrail/token)`);
-loop("local"); if (REMOTE_HOST) loop("remote");
+if (DEMO) setInterval(broadcast, 2000);
+else { loop("local"); if (REMOTE_HOST) loop("remote"); }

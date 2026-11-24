@@ -31,6 +31,7 @@ mkdirSync(join(APP, "Contents/Resources/jobtrail"), { recursive: true });
 cpSync(join(B, "JobTrail"), join(APP, "Contents/MacOS/JobTrail"));
 cpSync(join(B, "AppIcon.icns"), join(APP, "Contents/Resources/AppIcon.icns"));
 cpSync(join(root, "server.ts"), join(APP, "Contents/Resources/jobtrail/server.ts"));
+cpSync(join(root, "demo.ts"), join(APP, "Contents/Resources/jobtrail/demo.ts"));
 cpSync(join(root, "public"), join(APP, "Contents/Resources/jobtrail/public"), { recursive: true });
 writeFileSync(join(APP, "Contents/Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

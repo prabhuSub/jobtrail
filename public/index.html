@@ -31,7 +31,8 @@ button{font:inherit;color:inherit}
 .watching{display:flex;align-items:center;gap:8px;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
 .watching:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px #172015}
 .watching.stale:before{background:var(--danger);box-shadow:0 0 0 4px #2a1514}
-main{max-width:1180px;margin:0 auto;padding:28px 32px 80px}
+main{max-width:1180px;margin:0 auto;padding:6px 32px 80px}
+main>#list>.section-head:first-child{margin-top:8px}
 .fleet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-bottom:30px}
 .fleet-card{position:relative;padding:16px 18px;border:1px solid var(--line);border-radius:16px;background:var(--surface);transition:border-color 300ms var(--ease-out)}
 .fleet-card.glow{border-color:rgba(233,162,59,.55);box-shadow:0 0 24px rgba(233,162,59,.08)}
@@ -61,7 +62,7 @@ main{max-width:1180px;margin:0 auto;padding:28px 32px 80px}
 .pill.idle{color:var(--success);border-color:#1d2b22;background:var(--success-bg)}
 .pill.closed{color:var(--faint)}
 .chat-meta{margin-left:auto;color:var(--faint);font:400 11px/16px var(--mono);white-space:nowrap}
-.row{display:grid;grid-template-columns:16px 64px minmax(0,1fr) 64px 74px 76px 16px;align-items:center;gap:12px;width:100%;min-height:44px;padding:0 16px;border:0;border-top:1px solid var(--hover);background:transparent;cursor:pointer;text-align:left;transition:background 250ms var(--ease-out)}
+.row{display:grid;grid-template-columns:16px 80px minmax(0,1fr) 64px 74px 76px 16px;align-items:center;gap:12px;width:100%;min-height:44px;padding:0 16px;border:0;border-top:1px solid var(--hover);background:transparent;cursor:pointer;text-align:left;transition:background 250ms var(--ease-out)}
 .chat-head+.row{border-top:0}
 .row:hover,.row.open{background:var(--raised)}
 .row .st{width:8px;height:8px;border-radius:50%;background:var(--faint);justify-self:center}
@@ -70,6 +71,7 @@ main{max-width:1180px;margin:0 auto;padding:28px 32px 80px}
 .row.failed .st{background:var(--danger)}
 .row.done .st{background:var(--blue)}
 .mach{justify-self:start;padding:1px 7px;border-radius:6px;font:600 10px/16px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--soft);background:var(--hover)}
+.mach{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .mach.remote{color:#e8c48a;background:#2a2114}
 .lbl{min-width:0;display:flex;align-items:baseline;gap:10px}
 .lbl .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 13px/18px var(--mono);color:var(--text)}
@@ -404,7 +406,7 @@ function connect(){
   es.onmessage=e=>{S=JSON.parse(e.data);lastMsg=Date.now();
     // a rebuilt app (new page files) reaches every open window and the phone by itself
     if(S.version){if(window.jtVersion&&window.jtVersion!==S.version){hardReload();return}window.jtVersion=S.version}
-    render()};
+    render();if(!window.jtLinked){window.jtLinked=1;setTimeout(deepLink,900)}};
   es.onerror=()=>{$('#watch').textContent='reconnecting…';$('#watch').classList.add('stale')};
 }
 const visible=j=>filter==='all'||j.machine===filter;
@@ -500,6 +502,14 @@ function navMachines(){
   JobMap.card.custom(`<span class="fst running"></span><div><b>Macs</b><span>tap one for GPU, memory and its jobs</span></div>`,
     `<div class="dsec">${ms.map(m=>{const n=S.live.filter(j=>j.machine===m.id&&j.kind==='job').length;return`<button class="jrow" data-open="m:${esc(m.id)}"><span class="fst ${m.online?'running':'failed'}"></span><b>${esc(m.name)}</b><span>GPU ${m.gpu??'—'}% · mem ${m.memFree??'—'}% free · ${n} job${n===1?'':'s'}</span></button>`}).join('')}</div>`);
 }
+// deep links: #open=<box id>  #nav=running|macs  #range=1|7|30  #list (handy for sharing or screenshots)
+function deepLink(){const h=new URLSearchParams(location.hash.slice(1));
+  if(h.get('range'))setRange(h.get('range'));
+  if(h.has('list'))navJobs();
+  if(h.get('nav')==='running')navRunning();else if(h.get('nav')==='macs')navMachines();
+  if(h.get('open')){const id=h.get('open'),el=document.querySelector(`.mn[data-id="${CSS.escape(id)}"]`);JobMap.card.open(id,el)}
+  if(h.get('pick'))pick(h.get('pick'));
+  if(h.get('phone')!=null&&window.phoneURL)showPhone();}
 function setFilter(m){filter=m;localSet('jt.filter',m);render()}
 function tick(){
   document.querySelectorAll('[data-start]').forEach(e=>e.textContent=dur(Date.now()-+e.dataset.start));
