@@ -46,9 +46,16 @@ type MachineState = { id: MachineId; name: string; device: Device; host: string;
 // ---------- shell helpers ----------
 async function run(argv: string[], timeoutMs = 10000): Promise<{ ok: boolean; out: string; err: string }> {
   const p = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: { ...process.env, PATH: `${HOME}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin` } });
-  const t = setTimeout(() => p.kill(), timeoutMs);
-  const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
-  const code = await p.exited; clearTimeout(t);
+  const t = setTimeout(() => p.kill(9), timeoutMs);
+  // A child of the shell can keep the pipes open after the shell is killed (seen when the Mac is heavily loaded),
+  // which used to leave this waiting forever and froze that Mac on the map. Give up a little after the timeout.
+  let give: ReturnType<typeof setTimeout> | undefined;
+  const gaveUp = new Promise<null>((r) => { give = setTimeout(() => r(null), timeoutMs + 3000); });
+  const done = Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  const res = await Promise.race([done, gaveUp]);
+  clearTimeout(t); clearTimeout(give);
+  if (!res) return { ok: false, out: "", err: "timed out" };
+  const [out, err, code] = res;
   return { ok: code === 0, out, err };
 }
 const sh = (machine: MachineId, script: string, timeoutMs?: number) => {
