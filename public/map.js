@@ -164,11 +164,11 @@ function layout() {
   for (const j of jobsAll) { if (!firstSeen.has(j.id)) firstSeen.set(j.id, now); if (!j.endedAt) { const h = cpuHist.get(j.id) || []; if (h.at !== S.now) { h.push(j.cpu); if (h.length > 60) h.shift(); h.at = S.now; } cpuHist.set(j.id, h); } }
   for (const m of S.machines) for (const [hist, v] of [[gpuHist, m.gpu], [memHist, m.memFree]]) { const h = (hist[m.id] ||= []); if (v != null && h.at !== m.polledAt) { h.push(v); if (h.length > 90) h.shift(); h.at = m.polledAt; } }
 
-  // chats: every chat that owns a shown job, plus busy chats with nothing running (thinking)
+  // chats: every chat that owns a shown job
   const chatKey = j => j.chat?.sessionId || '__none';
   const chats = new Map();
   for (const j of jobsAll) { const k = chatKey(j); if (!chats.has(k)) chats.set(k, { key: k, chat: j.chat, jobs: [] }); chats.get(k).jobs.push(j); }
-  for (const c of S.chats || []) if (c.status === 'busy' && !chats.has(c.sessionId)) chats.set(c.sessionId, { key: c.sessionId, chat: { sessionId: c.sessionId, title: c.title, status: c.status, cwd: c.cwd }, jobs: [] });
+  // (busy chats with nothing running are no longer drawn: the map shows chats that have jobs)
   for (const c of chats.values()) if (c.chat?.sessionId) { const lp = (S.chats || []).find(x => x.sessionId === c.chat.sessionId); if (lp) c.chat = { ...c.chat, status: lp.status, cwd: c.chat.cwd || lp.cwd }; }
   const order = [...chats.values()].sort((a, b) => (b.jobs.some(j => !j.endedAt) - a.jobs.some(j => !j.endedAt)) || (Math.min(...a.jobs.map(j => j.startedAt), 9e15) - Math.min(...b.jobs.map(j => j.startedAt), 9e15)));
   const rank = new Map(order.map((c, i) => [c.key, i]));
@@ -427,6 +427,7 @@ const Card = (() => {
             <div class="dsec"><div class="k">Log <span>${esc(j.log ? tildeP(j.log) : 'no log file (stdout not redirected)')}</span></div>${j.log ? `<pre class="log">${d ? esc(d.logTail || '(empty)') : esc((j.tail || []).join('\n')) || 'loading…'}</pre>` : ''}</div>
             <div class="dsec"><div class="k">Command</div><pre>${esc(j.command)}</pre></div>
             ${j.pids?.length ? `<div class="dsec"><div class="k">Processes</div><div class="procs">${j.pids.map(p => `<div><span>${p.pid}</span><span>${p.cpu.toFixed(1)}%</span><span>${size(p.rss * 1024)}</span><span title="${esc(p.cmd)}">${esc(p.cmd)}</span></div>`).join('')}</div></div>` : ''}
+            ${typeof killBtn === 'function' ? killBtn(j) : ''}
             <div class="fact"><button data-pick="${esc(j.id)}">Show in list</button></div>`;
           const outs = (d?.outputs || j.outs || []).slice(0, 8);
           mk = outs.map(o => o.path + o.mtime).join('|');

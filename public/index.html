@@ -255,6 +255,12 @@ details.svc[open]>summary h2:after{content:" ↑"}
 .mn.out .txt span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mn.out.writing .txt span:last-child:after{content:"▋";margin-left:2px;animation:pulse 1s steps(2) infinite}
 .legend .hint{color:var(--accent)}
+.stale{flex:none;padding:0 6px;border-radius:5px;font:600 9px/15px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);border:1px dashed var(--line)}
+.killbar{display:flex;align-items:center;gap:10px;margin:10px 0 2px;padding:10px 12px;border:1px dashed #4a2423;border-radius:10px;background:var(--danger-bg);color:var(--soft);font-size:12px;line-height:16px}
+.killbar b{color:var(--danger);font-weight:600}
+.killbar button{margin-left:auto;flex:none;border:1px solid #5a2a28;background:#3a1a19;color:var(--danger);border-radius:8px;padding:5px 12px;font:600 11px/16px var(--mono);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.killbar button.arm{background:var(--danger);color:#000;border-color:var(--danger)}
+.killbar button:disabled{opacity:.5}
 /* floating card */
 .fcard{position:fixed;z-index:20;left:0;top:0;width:520px;max-height:calc(100dvh - 32px);display:flex;flex-direction:column;border:1px solid var(--line);border-radius:18px;background:rgba(20,20,20,.94);
   -webkit-backdrop-filter:blur(18px) saturate(1.3);backdrop-filter:blur(18px) saturate(1.3);box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03) inset;
@@ -453,7 +459,7 @@ function rowHtml(j,showChat){
   const isOpen=open.has(j.id),st=j.endedAt?j.state:j.state;
   return`<button class="row ${st} ${isOpen?'open':''}" onclick="toggle('${j.id}')" aria-expanded="${isOpen}">
     <span class="st"></span><span class="mach ${j.machine}" title="${esc(mname(j.machine))}">${esc(mshort(j.machine))}</span>
-    <span class="lbl"><span class="t" title="${esc(j.label)}">${esc(j.label)}</span>${j.step?`<span class="s">${esc(j.step)}</span>`:''}${j.caffeinated?'<span class="caf" title="wrapped in caffeinate">☕︎</span>':''}${showChat&&j.chat?`<span class="caf">${esc(j.chat.title)}</span>`:''}</span>
+    <span class="lbl"><span class="t" title="${esc(j.label)}">${esc(j.label)}</span>${j.step?`<span class="s">${esc(j.step)}</span>`:''}${j.caffeinated?'<span class="caf" title="wrapped in caffeinate">☕︎</span>':''}${!j.endedAt&&j.stale?`<span class="stale" title="idle for 6 h or more${j.orphan?' · no chat, no parent':''}">${j.orphan?'stale · orphan':'stale'}</span>`:''}${showChat&&j.chat?`<span class="caf">${esc(j.chat.title)}</span>`:''}</span>
     <span class="cell" title="started">${clock(j.startedAt)}</span>
     <span class="cell el" ${j.endedAt?'':`data-start="${j.startedAt}"`}>${j.endedAt?dur(j.endedAt-j.startedAt):''}</span>
     <span class="stw">${esc(st)}</span>
@@ -472,10 +478,28 @@ function detailHtml(j){
     <div class="kv"><div class="k">Chat</div><div class="v">${esc(j.chat?.title||'—')}${j.chat?.sessionId?`<br><span class="muted">${esc(j.chat.sessionId.slice(0,8))} · ${esc(j.chat.via==='process'?'by process':'by command')}</span>`:''}</div></div>
     ${j.cwd?`<div class="kv"><div class="k">Folder</div><div class="v">${esc(j.cwd)}</div></div>`:''}
   </div>
+  ${killBtn(j)}
   <div class="dsec"><div class="k">Command</div><pre>${esc(j.command)}</pre></div>
   <div class="dsec"><div class="k">Log <span>${esc(j.log||'no log file found (stdout not redirected)')}</span></div>${j.log?`<pre class="log">${d?esc(d.logTail||'(empty)'):'loading…'}</pre>`:''}</div>
   <div class="dsec"><div class="k">Outputs <span>newest files in folders named by the command</span></div><div class="outs">${d?(d.outputs?.length?d.outputs.map(o=>`<div><span title="${esc(o.path)}">${esc(o.path)}</span><span>${size(o.size)}</span><span>${ago(o.mtime)}</span></div>`).join(''):'<span class="muted">none found</span>'):'<span class="muted">loading…</span>'}</div></div>
   ${j.pids?.length?`<div class="dsec"><div class="k">Processes</div><div class="procs">${j.pids.map(p=>`<div><span>${p.pid}</span><span>${p.cpu.toFixed(1)}%</span><span>${mem(p.rss)}</span><span title="${esc(p.cmd)}">${esc(p.cmd)}</span></div>`).join('')}</div></div>`:''}`;
+}
+// End a stale orphan: two taps (the armed state survives the card's 3 s re-render; no confirm() dialogs,
+// they don't show inside app web views)
+const killState=new Map();
+function killBtn(j){
+  if(j.endedAt||!(j.orphan&&j.stale))return'';
+  const st=killState.get(j.id),armed=st&&st.armedUntil>Date.now();
+  const txt=st?.done?st.done:(st?.busy?'Ending…':(armed?'Tap again to end':'End process'));
+  return`<div class="killbar"><span><b>Stale</b> · no chat started it and its parent is gone; idle ${dur(Date.now()-j.startedAt)}.</span><button class="${armed?'arm':''}" ${st?.busy||st?.done?'disabled':''} onclick="killJob(event,'${esc(j.id)}',this)">${txt}</button></div>`;
+}
+async function killJob(ev,id,btn){
+  ev.stopPropagation();
+  const st=killState.get(id)||{};
+  if(!(st.armedUntil>Date.now())){killState.set(id,{armedUntil:Date.now()+5000});btn.classList.add('arm');btn.textContent='Tap again to end';return}
+  killState.set(id,{busy:true});btn.disabled=true;btn.textContent='Ending…';
+  try{const r=await fetch('/api/kill?id='+encodeURIComponent(id),{method:'POST'});const d=await r.json();killState.set(id,{done:d.ok?'Ended':(d.error||'Failed')});btn.textContent=d.ok?'Ended':(d.error||'Failed')}
+  catch{killState.set(id,{done:'Failed'});btn.textContent='Failed'}
 }
 function toggle(id){if(open.has(id))open.delete(id);else{open.add(id);fetchDetail(id)}render()}
 async function fetchDetail(id){

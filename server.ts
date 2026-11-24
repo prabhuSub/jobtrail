@@ -35,6 +35,9 @@ type Job = {
   kind: "job" | "service"; label: string; step?: string; command: string; mainCmd: string;
   cpu: number; rss: number; pids: { pid: number; cmd: string; cpu: number; rss: number }[];
   caffeinated: boolean; waitingOn?: number; log?: string; chat?: Chat; cwd?: string;
+  ppid?: number;          // parent of the job's root process (1 = its launcher is gone)
+  orphan?: boolean;       // no chat and no living parent
+  stale?: boolean;        // idle (< 1% CPU) for 6 h or more
   outs?: { path: string; mtime: number; size: number }[]; tail?: string[];
 };
 type Chat = { sessionId?: string; title: string; status?: string; cwd?: string; via: "process" | "transcript" | "none" };
@@ -177,6 +180,8 @@ async function chatFromTranscripts(job: Job): Promise<Chat | undefined> {
   const hit = transcriptCache.get(job.id);
   if (hit && (hit.chat || Date.now() - hit.at < 30000)) return hit.chat;
   const toks = pathTokens(job.command).slice(0, 4);
+  // the command's own opening text, as a transcript stores it (JSON-escaped): the strongest evidence
+  const fp = JSON.stringify(job.command.trim().slice(0, 48)).slice(1, -1);
   const projects = join(HOME, ".claude/projects"); const files: string[] = [];
   try {
     for (const d of readdirSync(projects)) {
@@ -205,11 +210,14 @@ async function chatFromTranscripts(job: Job): Promise<Chat | undefined> {
       }
       if (found) n++;
     }
+    if (fp.length >= 16 && text.includes(fp)) n += 10;
     if (n) score.set(f, { n, ts });
   }
   let best: string | undefined, bs = 0, bt = 0;
   for (const [f, v] of score) if (v.n > bs || (v.n === bs && v.ts > bt)) { best = f; bs = v.n; bt = v.ts; }
-  const chat = best ? chatFor(basename(best, ".jsonl"), "transcript") : undefined;
+  // one shared path is not enough (it pinned unrelated jobs to whichever chat mentioned that path):
+  // need the command itself, or at least two of its paths
+  const chat = best && bs >= 2 ? chatFor(basename(best, ".jsonl"), "transcript") : undefined;
   transcriptCache.set(job.id, { chat, at: Date.now() });
   return chat;
 }
@@ -298,6 +306,7 @@ function buildJobs(machine: MachineId, procs: Map<number, Proc>, now: number): J
       command: script, mainCmd: main.cmd, cpu, rss,
       pids: tree.map((p) => ({ pid: p.pid, cmd: p.cmd.slice(0, 400), cpu: p.cpu, rss: p.rss })),
       caffeinated: tree.some((p) => argv0(p.cmd) === "caffeinate"), waitingOn: waitM ? +waitM[1] : undefined,
+      ppid: r.ppid,
     };
     if (isClaudeShell(r)) {
       let a: Proc | undefined = r; let hops = 0;
@@ -364,6 +373,8 @@ async function poll(machine: MachineId) {
   for (const j of jobs) {
     if (!j.chat) j.chat = await chatFromTranscripts(j);
     if (j.chat?.sessionId) { const fresh = chatFor(j.chat.sessionId, j.chat.via); j.chat.status = fresh.status; j.chat.title = fresh.title; }
+    j.stale = Date.now() - j.startedAt > 6 * 3600e3 && j.cpu < 1;
+    j.orphan = !j.chat && j.ppid === 1;   // launched by something that has since exited (now owned by launchd)
   }
   const ids = new Set(jobs.map((j) => j.id));
   for (const [id, j] of live) if (j.machine === machine && !ids.has(id)) { live.delete(id); await finish(j); }
@@ -571,6 +582,15 @@ async function route(req: Request, srv: any): Promise<Response> {
     if (url.pathname === "/api/preview") return preview(url.searchParams.get("id") ?? "", url.searchParams.get("path") ?? "", url.searchParams.get("m") ?? "");
     if (url.pathname === "/api/file") return rawFile(url.searchParams.get("id") ?? "", url.searchParams.get("path") ?? "", req);
     if (url.pathname === "/api/state") return Response.json(snapshot());
+    // end a stale orphan (no chat, no parent, idle 6 h+); nothing else can be killed from here
+    if (url.pathname === "/api/kill" && req.method === "POST") {
+      const j = live.get(url.searchParams.get("id") ?? "");
+      if (!j) return Response.json({ ok: false, error: "gone" }, { status: 404 });
+      if (!(j.orphan && j.stale)) return Response.json({ ok: false, error: "only stale jobs with no chat can be ended" }, { status: 403 });
+      const pids = [...new Set([j.pid, ...(j.pids ?? []).map((p) => p.pid)])].filter((p) => Number.isInteger(p) && p > 1).join(" ");
+      await sh(j.machine, `kill -TERM ${pids} 2>/dev/null; sleep 2; kill -KILL ${pids} 2>/dev/null; true`, 10000);
+      return Response.json({ ok: true });
+    }
     if (url.pathname === "/api/history") {
       const days = Math.min(HIST_DAYS, Number(url.searchParams.get("days") ?? 7) || 7), cut = Date.now() - days * 86400e3;
       return Response.json(history.filter((j) => (j.endedAt ?? 0) > cut));
