@@ -344,7 +344,9 @@ function frame() {
   }
   for (const e of edges.values()) {
     const ps = e.pts.map(([id, side]) => anchor(id, side));
-    if (ps.some(p => !p)) { e.p.setAttribute('d', ''); e.f.setAttribute('d', ''); continue; }
+    // a hidden end (e.g. a job folded into '+N more'): no path, and park its dots, which would otherwise sit at the map's top-left corner
+    if (ps.some(p => !p)) { if (e.d !== '') { e.d = ''; e.p.setAttribute('d', ''); e.f.setAttribute('d', ''); } if (e.parts && e.parts.style.display !== 'none') e.parts.style.display = 'none'; continue; }
+    if (e.parts && e.parts.style.display === 'none') e.parts.style.display = '';
     let d;
     if (e.kind === 'wait') { const [a, b] = ps, bx = Math.min(a[0], b[0]) - 30; d = `M${a[0]},${a[1]} C${bx},${a[1]} ${bx},${b[1]} ${b[0]},${b[1]}`; }
     else if (ps.length === 4) d = `M${ps[0][0].toFixed(1)},${ps[0][1].toFixed(1)} ${seg(ps[0], ps[1])} ${seg(ps[2], ps[3])}`;
