@@ -62,6 +62,7 @@ const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim
 function declaredFor(m) { const n = norm(m.name); return (S?.progress?.machines || []).find(x => { const k = norm(x.name); return k && n && (k === n || k.includes(n) || n.includes(k)); }); }
 
 // ---------- state ----------
+let snap = false; // while the divider is dragged, boxes follow the new size at once (no easing lag)
 let root, svg, layer, gEdges, gParts, W = 0, H = 0, S = null, onPick = () => {}, vertical = false;
 const nodes = new Map(), edges = new Map(), cpuHist = new Map(), gpuHist = {}, memHist = {};
 const firstSeen = new Map();
@@ -176,7 +177,7 @@ function layout() {
   const pri = j => j.endedAt ? 2 : j.state === 'running' ? 0 : 1;
   for (const m of mids) per[m].sort((a, b) => (pri(a) - pri(b)) || (rank.get(chatKey(a)) - rank.get(chatKey(b))) || (a.startedAt - b.startedAt));
 
-  const pad = vertical ? 10 : 18, head = 40, OGAP = W < 980 ? 50 : 70;
+  const LEGEND = vertical ? 0 : 30, pad = vertical ? 10 : 18, head = 40, OGAP = W < 980 ? 50 : 70;
   const zones = {}, chatPos = new Map();
   let G; // geometry per mode
   if (vertical) {
@@ -195,7 +196,7 @@ function layout() {
     const zx = pad + cw + gap, zw = W - zx - pad;
     const mw = compact ? 112 : 140, mh = compact ? 96 : 116, gx = 18 + mw + (compact ? 60 : 84);
     const jw = Math.min(compact ? 220 : 320, Math.max(180, zw * .34)), ow = Math.max(120, Math.min(280, zw - gx - jw - OGAP - 18));
-    const top = pad + 6, room = H - top - pad - 18;
+    const top = pad + 6, room = H - top - pad - 18 - LEGEND; // the legend gets its own strip at the bottom
     const need = m => head + 24 + Math.max(mh + 16, Math.max(1.4, per[m].length) * 62);
     const zmin = head + mh + 20, [A, B] = mids;
     if (!B) zones[A] = { y: top, h: Math.max(zmin, room + 12) };
@@ -334,7 +335,7 @@ function seg(a, b) {
 function frame() {
   for (const n of nodes.values()) {
     if (!n.tgt) continue;
-    const c = n.cur, t = n.tgt, k = .16;
+    const c = n.cur, t = n.tgt, k = snap ? 1 : .16;
     c.x += (t.x - c.x) * k; c.y += (t.y - c.y) * k; c.w += (t.w - c.w) * k; c.h += (t.h - c.h) * k;
     const s = n.el.style, tr = `translate(${c.x.toFixed(1)}px,${c.y.toFixed(1)}px)`;
     if (s.transform !== tr) s.transform = tr;
@@ -483,5 +484,5 @@ document.addEventListener('click', ev => {
   Card.open(el.dataset.id, el);
 });
 
-window.JobMap = { init, update, card: Card };
+window.JobMap = { init, update, card: Card, setSnap: v => { snap = v; } };
 })();

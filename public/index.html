@@ -342,7 +342,7 @@ details.svc[open]>summary h2:after{content:" ↑"}
 .mn.device:hover .dv{transform:translateY(-1px)}
 .mn.device.sel{outline:none}.mn.device.sel .dl b{color:var(--accent)}
 @media (max-width:719px){.mn.device .dl>span{display:none}.mn.device .dl .ms{display:none}.mn.device .dl .sj{display:block;font-size:8px}}
-.split{position:relative;height:12px;margin:0 16px;cursor:row-resize;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none}
+.split{position:relative;height:14px;margin:0 16px;cursor:row-resize;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none}
 .split:before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--hover)}
 .split span{position:relative;width:44px;height:5px;border-radius:3px;background:var(--line);transition:background 200ms,width 200ms}
 .split:hover span,.split.drag span{background:var(--accent);width:64px}
@@ -362,6 +362,10 @@ details.svc[open]>summary h2:after{content:" ↑"}
   main{padding-bottom:calc(90px + env(safe-area-inset-bottom))}
   .fcard.sheet{bottom:calc(58px + env(safe-area-inset-bottom));max-height:calc(82dvh - 60px);border-radius:20px;left:6px!important;right:6px;padding-bottom:0}
 }
+.split:after{content:"";position:absolute;left:0;right:0;top:-6px;bottom:-6px} /* bigger grab area */
+html.resizing,html.resizing *{user-select:none!important;-webkit-user-select:none!important;cursor:row-resize!important}
+html.resizing .mn,html.resizing .mn *{transition:none!important}
+.legend{bottom:6px;right:18px;left:18px;justify-content:flex-end;height:18px;align-items:center}
 </style>
 </head>
 <body>
@@ -520,13 +524,20 @@ setInterval(tick,1000);
 setInterval(()=>{for(const id of open)fetchDetail(id)},3000);
 JobMap.init(document.getElementById('map'),pick);
 // resizable top/bottom halves: drag the bar under the map; remembered per Mac
-(()=>{const map=document.getElementById('map'),bar=document.getElementById('split');
-  const apply=h=>{if(innerWidth<720){map.style.removeProperty('height');return}if(h)map.style.height=Math.max(260,Math.min(innerHeight-120,h))+'px';else map.style.removeProperty('height')};
+(()=>{const map=document.getElementById('map'),bar=document.getElementById('split'),html=document.documentElement;
+  const clamp=h=>Math.round(Math.max(300,Math.min(innerHeight-140,h)));
+  const apply=h=>{if(innerWidth<720){map.style.removeProperty('height');return}if(h)map.style.height=clamp(h)+'px';else map.style.removeProperty('height')};
   apply(+localGet('jt.mapH')||0);
-  let y0=0,h0=0;
-  bar.addEventListener('pointerdown',e=>{y0=e.clientY;h0=map.getBoundingClientRect().height;bar.setPointerCapture(e.pointerId);bar.classList.add('drag')});
-  bar.addEventListener('pointermove',e=>{if(!bar.classList.contains('drag'))return;apply(h0+e.clientY-y0)});
-  bar.addEventListener('pointerup',()=>{bar.classList.remove('drag');localSet('jt.mapH',String(Math.round(map.getBoundingClientRect().height)))});
+  let y0=0,h0=0,want=0,raf=0,drag=false;
+  const step=()=>{raf=0;apply(want)};
+  const end=e=>{if(!drag)return;drag=false;bar.classList.remove('drag');html.classList.remove('resizing');JobMap.setSnap(false);
+    try{bar.releasePointerCapture(e.pointerId)}catch{}localSet('jt.mapH',String(Math.round(map.getBoundingClientRect().height)))};
+  bar.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();getSelection()?.removeAllRanges();
+    drag=true;y0=e.clientY;h0=map.getBoundingClientRect().height;want=h0;bar.setPointerCapture(e.pointerId);
+    bar.classList.add('drag');html.classList.add('resizing');JobMap.setSnap(true)});
+  bar.addEventListener('pointermove',e=>{if(!drag)return;e.preventDefault();want=h0+e.clientY-y0;if(!raf)raf=requestAnimationFrame(step)});
+  bar.addEventListener('pointerup',end);bar.addEventListener('pointercancel',end);bar.addEventListener('lostpointercapture',end);
+  document.addEventListener('selectstart',e=>{if(drag)e.preventDefault()});
   bar.addEventListener('dblclick',()=>{localSet('jt.mapH','');apply(0)});
   addEventListener('resize',()=>apply(+localGet('jt.mapH')||0));
 })();
