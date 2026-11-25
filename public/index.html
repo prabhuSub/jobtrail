@@ -451,7 +451,7 @@ function render(){
   const sv=svcs.filter(visible);
   if(sv.length){h+=`<details class="svc" ${localGet('jt.svc')==='1'?'open':''} ontoggle="localSet('jt.svc',this.open?'1':'0')"><summary class="section-head"><h2>Services</h2><span class="sub">${sv.length} long-running servers</span></summary><section class="chat">`;for(const j of sv)h+=rowHtml(j,true);h+=`</section></details>`}
   const y=scrollY;$('#list').innerHTML=h;scrollTo(0,y);
-  JobMap.update(S);
+  JobMap.update(S, filter);
   document.querySelectorAll('pre.log').forEach(p=>p.scrollTop=p.scrollHeight);
   tick();
 }

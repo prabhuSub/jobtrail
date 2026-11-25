@@ -152,7 +152,9 @@ function outInner(j, o, h) {
 }
 
 // ---------- layout from a snapshot ----------
-function update(state) { S = state; layout(); Card.refresh(); }
+// only: a machine id to show just that Mac (the top All / Mac / mini filter), or null for all
+let only = null;
+function update(state, filter) { S = state; only = filter && filter !== 'all' && S.machines.some(m => m.id === filter) ? filter : null; layout(); Card.refresh(); }
 function layout() {
   if (!S || !W) return;
   for (const n of nodes.values()) n.seen = false;
@@ -160,7 +162,7 @@ function layout() {
   const now = Date.now();
   vertical = W < 720;
   const compact = !vertical && W < 980;
-  const jobsAll = [...S.live.filter(j => j.kind === 'job'), ...S.recent.filter(j => j.kind === 'job' && now - (j.endedAt || 0) < 90000)];
+  const jobsAll = [...S.live.filter(j => j.kind === 'job'), ...S.recent.filter(j => j.kind === 'job' && now - (j.endedAt || 0) < 90000)].filter(j => !only || j.machine === only);
   for (const j of jobsAll) { if (!firstSeen.has(j.id)) firstSeen.set(j.id, now); if (!j.endedAt) { const h = cpuHist.get(j.id) || []; if (h.at !== S.now) { h.push(j.cpu); if (h.length > 60) h.shift(); h.at = S.now; } cpuHist.set(j.id, h); } }
   for (const m of S.machines) for (const [hist, v] of [[gpuHist, m.gpu], [memHist, m.memFree]]) { const h = (hist[m.id] ||= []); if (v != null && h.at !== m.polledAt) { h.push(v); if (h.length > 90) h.shift(); h.at = m.polledAt; } }
 
@@ -168,11 +170,11 @@ function layout() {
   const chatKey = j => j.chat?.sessionId || '__none';
   const chats = new Map();
   for (const j of jobsAll) { const k = chatKey(j); if (!chats.has(k)) chats.set(k, { key: k, chat: j.chat, jobs: [] }); chats.get(k).jobs.push(j); }
-  for (const c of S.chats || []) if (c.status === 'busy' && !chats.has(c.sessionId)) chats.set(c.sessionId, { key: c.sessionId, chat: { sessionId: c.sessionId, title: c.title, status: c.status, cwd: c.cwd }, jobs: [] });
+  if (!only) for (const c of S.chats || []) if (c.status === 'busy' && !chats.has(c.sessionId)) chats.set(c.sessionId, { key: c.sessionId, chat: { sessionId: c.sessionId, title: c.title, status: c.status, cwd: c.cwd }, jobs: [] });
   for (const c of chats.values()) if (c.chat?.sessionId) { const lp = (S.chats || []).find(x => x.sessionId === c.chat.sessionId); if (lp) c.chat = { ...c.chat, status: lp.status, cwd: c.chat.cwd || lp.cwd }; }
   const order = [...chats.values()].sort((a, b) => (b.jobs.some(j => !j.endedAt) - a.jobs.some(j => !j.endedAt)) || (Math.min(...a.jobs.map(j => j.startedAt), 9e15) - Math.min(...b.jobs.map(j => j.startedAt), 9e15)));
   const rank = new Map(order.map((c, i) => [c.key, i]));
-  const mids = S.machines.map(m => m.id), per = Object.fromEntries(mids.map(m => [m, []]));
+  const mids = S.machines.map(m => m.id).filter(id => !only || id === only), per = Object.fromEntries(mids.map(m => [m, []]));
   for (const j of jobsAll) per[j.machine]?.push(j);
   const pri = j => j.endedAt ? 2 : j.state === 'running' ? 0 : 1;
   for (const m of mids) per[m].sort((a, b) => (pri(a) - pri(b)) || (rank.get(chatKey(a)) - rank.get(chatKey(b))) || (a.startedAt - b.startedAt));
