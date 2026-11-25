@@ -237,9 +237,15 @@ function layout() {
       <span class="zm" title="GPU utilisation"><em>GPU</em>${small ? '' : `<span class="zbar"><i style="width:${g || 0}%"></i></span>`}<strong>${g == null ? '—' : g + '%'}</strong>${spark(gpuHist[mid], small ? 36 : 54, 16, '#e9a23b', 100)}</span>
       <span class="zm" title="memory free"><em>MEM</em>${small ? '' : `<span class="zbar"><i style="width:${f || 0}%;background:${f != null && f < 20 ? '#db6b67' : '#7aa36a'}"></i></span>`}<strong>${f == null ? '—' : f + '%'}</strong></span>
       ${small ? '' : `<span class="zm"><em>LOAD</em><strong>${esc(m.load ?? '—')}</strong></span><span class="zm"><em>JOBS</em><strong>${jobs.filter(j => !j.endedAt).length}</strong></span>`}
-      ${svcs && !small ? `<span class="zm muted">+${svcs} svc</span>` : ''}
+      ${svcs ? `<span class="zm muted">+${svcs} svc</span>` : ''}
       ${dec && !small ? `<span class="zdec">declared: ${esc(dec.job)} · ${esc(dec.state)}</span>` : ''}`);
-    setHTML(zn, '.zb', !m.online ? `<div class="zempty err">offline · ${esc(m.error || 'unreachable')}</div>` : jobs.length ? '' : `<div class="zempty">idle · nothing heavy running</div>`);
+    // no jobs: name the services that are running (dev servers etc.) instead of just 'idle'; on phones the text sits
+    // under the drawn Mac (it used to be centred on top of the Mac's name)
+    const svcList = S.live.filter(j => j.kind === 'service' && j.machine === mid && !j.endedAt);
+    const svcNames = (() => { const c = new Map(); for (const j of svcList) c.set(j.label, (c.get(j.label) || 0) + 1); return [...c].map(([l, n]) => esc(l) + (n > 1 ? ` ×${n}` : '')).join(' · '); })();
+    const zst = vertical ? ' style="top:auto;bottom:6px;height:auto;min-height:34px;padding:0 16px;text-align:center"' : ' style="padding:0 24px;text-align:center"';
+    setHTML(zn, '.zb', !m.online ? `<div class="zempty err"${zst}>offline · ${esc(m.error || 'unreachable')}</div>` : jobs.length ? '' :
+      `<div class="zempty"${zst}>${svcList.length ? `idle · ${svcList.length} service${svcList.length > 1 ? 's' : ''}: ${svcNames}` : 'idle · nothing heavy running'}</div>`);
     zn.machine = m;
 
     const cy0 = z.y + head, ch = z.h - head - 8;
