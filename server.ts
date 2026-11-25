@@ -89,10 +89,19 @@ const SERVICE = /serve(r)?\.(ts|js|mjs|py)\b|http\.server|uvicorn|\bvite\b|next 
 
 const argv0 = (cmd: string) => basename(cmd.trim().split(/\s+/)[0] ?? "");
 function isShellC(cmd: string) { return /^(\S*\/)?(ba|z)?sh\s+(-\w+\s+)*-c\b/.test(cmd.trim()); }
+// `bash path/to/run.sh args…` -> { name: "run.sh", arg: "args…" } (null for `bash -c` and interactive shells)
+function shellScriptFile(cmd: string) {
+  const w = cmd.trim().split(/\s+/);
+  if (!/^(\S*\/)?(ba|z)?sh$/.test(w[0] ?? "")) return null;
+  const i = w.findIndex((x, k) => k > 0 && !x.startsWith("-"));
+  if (i < 0 || !/\.(sh|bash|zsh)$/.test(w[i])) return null;
+  const arg = w.slice(i + 1).find((x) => !x.includes("/") && !x.startsWith("-") && x.length <= 24);
+  return { name: basename(w[i]), arg };
+}
 function isHeavy(cmd: string) {
   const a = argv0(cmd);
   if (!HEAVY.test(a)) return false;
-  if (/^(ba|z)?sh$/.test(a)) return isShellC(cmd);
+  if (/^(ba|z)?sh$/.test(a)) return isShellC(cmd) || !!shellScriptFile(cmd);
   if (a === "caffeinate") return cmd.trim().split(/\s+/).some((w, i) => i > 0 && !w.startsWith("-"));
   return true;
 }
@@ -142,6 +151,8 @@ function label(cmd: string) {
     return `${sname}${sub}${target ? ` · ${tail(target)}` : ""}`;
   }
   const a = argv0(c);
+  const entry = /python[\d.]*$|^Python$/.test(a) && words[1] && /\/bin\/[\w.-]+$/.test(words[1]) ? 1 : /\/(\.?venv|bin)\/[\w.-]+$/.test(words[0]) && !/^(python|bash|sh|zsh)/.test(a) ? 0 : -1;
+  if (entry >= 0) { const sub = words[entry + 1] && /^[a-z][\w-]*$/.test(words[entry + 1]) ? ` ${words[entry + 1]}` : ""; return `${basename(words[entry])}${sub}`; }
   if (a === "ffmpeg") return `ffmpeg → ${tail(words[words.length - 1] ?? "")}`;
   return tilde(c).replace(/\s+/g, " ").slice(0, 90);
 }
@@ -315,6 +326,17 @@ function buildJobs(machine: MachineId, procs: Map<number, Proc>, now: number): J
       caffeinated: tree.some((p) => argv0(p.cmd) === "caffeinate"), waitingOn: waitM ? +waitM[1] : undefined,
       ppid: r.ppid,
     };
+    // A script runner (a queue like `bash run_all.sh`): one job, labelled by the chain of scripts down to what is
+    // actually working, e.g. "han_first.sh › shot.sh S09 › ltx-actor.sh S09 › ltx-2-mlx ic-lora".
+    const rs = shellScriptFile(r.cmd);
+    if (rs && !poller) {
+      const path: Proc[] = []; let a: Proc | undefined = main;
+      while (a && path.length < 12) { path.unshift(a); if (a === r) break; a = procs.get(a.ppid); }
+      job.label = path.map((p) => { const f = shellScriptFile(p.cmd); return f ? `${f.name}${f.arg ? " " + f.arg : ""}` : p === main ? label(p.cmd) : ""; })
+        .filter(Boolean).join(" › ");
+      if (main === r && tree.some((p) => argv0(p.cmd) === "sleep")) job.state = "waiting"; // only looping on sleep
+      if (main !== r) job.kind = "job"; // GPU work shows ~0% CPU; a long queue is still a job, not a service
+    }
     if (isClaudeShell(r)) {
       let a: Proc | undefined = r; let hops = 0;
       while (a && hops++ < 8 && !livePids.has(a.pid)) a = procs.get(a.ppid);
