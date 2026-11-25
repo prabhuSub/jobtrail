@@ -92,6 +92,7 @@ function node(id, kind, make) {
   let n = nodes.get(id);
   if (!n) {
     const el = document.createElement('div'); el.className = `mn ${kind} enter`; el.dataset.id = id;
+    el.style.visibility = 'hidden'; // until it has a position (else it shows in the map's top-left corner)
     make?.(el); layer.appendChild(el);
     n = { id, kind, el, cur: null, tgt: null, seen: true, html: {} };
     nodes.set(id, n);
@@ -100,7 +101,14 @@ function node(id, kind, make) {
   n.seen = true; n.leaving = false; n.el.classList.remove('leaving');
   return n;
 }
-function place(n, x, y, w, h) { n.tgt = { x, y, w, h }; if (!n.cur) n.cur = { ...n.tgt }; }
+function place(n, x, y, w, h) {
+  n.tgt = { x, y, w, h };
+  if (!n.cur) { // first placement: put it there now, not on the next animation frame (slow when the window is in the background)
+    n.cur = { ...n.tgt };
+    const st = n.el.style;
+    st.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`; st.width = w.toFixed(1) + 'px'; st.height = h.toFixed(1) + 'px'; st.visibility = '';
+  }
+}
 function setHTML(n, sel, html) { if (n.html[sel] === html) return false; n.html[sel] = html; const t = sel === '.' ? n.el : n.el.querySelector(sel); t.innerHTML = html; fillWaves(t); return true; }
 function cls(n, c) { const sel = n.el.classList.contains('sel') ? ' sel' : ''; const full = `mn ${n.kind} ${c}${n.el.classList.contains('enter') ? ' enter' : ''}${sel}`.replace(/\s+/g, ' ').trim(); if (n.el.className !== full) n.el.className = full; }
 
@@ -363,7 +371,7 @@ const Card = (() => {
   let el, cur = null, timer = null, detail = null, mediaKey = '';
   function ensure() {
     if (el) return;
-    el = document.createElement('div'); el.className = 'fcard'; el.innerHTML = `<div class="fgrab"></div><button class="fx" aria-label="close">×</button><div class="fh"></div><div class="fbody"><div class="fdyn"></div><div class="fmedia"></div></div>`;
+    el = document.createElement('div'); el.className = 'fcard'; el.innerHTML = `<div class="fgrab"></div><button class="fx" aria-label="close"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8"/></svg></button><div class="fh"></div><div class="fbody"><div class="fdyn"></div><div class="fmedia"></div></div>`;
     document.body.appendChild(el);
     el.querySelector('.fx').onclick = close;
     el.addEventListener('click', ev => { const a = ev.target.closest('[data-open]'); if (a) { ev.stopPropagation(); openId(a.dataset.open, null); } const p = ev.target.closest('[data-pick]'); if (p) { close(); onPick(p.dataset.pick); } });
