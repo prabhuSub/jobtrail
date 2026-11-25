@@ -112,6 +112,20 @@ function place(n, x, y, w, h) {
 function setHTML(n, sel, html) { if (n.html[sel] === html) return false; n.html[sel] = html; const t = sel === '.' ? n.el : n.el.querySelector(sel); t.innerHTML = html; fillWaves(t); return true; }
 function cls(n, c) { const sel = n.el.classList.contains('sel') ? ' sel' : ''; const full = `mn ${n.kind} ${c}${n.el.classList.contains('enter') ? ' enter' : ''}${sel}`.replace(/\s+/g, ' ').trim(); if (n.el.className !== full) n.el.className = full; }
 
+function buildDots(e) { // unchanged look: same count, speed, size and glow as before
+  e.partKey = e.state;
+  const spec = { run: [3, 2.6], write: [2, 1.8], wait: [1, 6], think: [2, 3.2] }[e.state];
+  if (!spec) return;
+  const g = document.createElementNS(NS, 'g'); g.setAttribute('class', `pt ${e.state}`);
+  for (let i = 0; i < spec[0]; i++) {
+    const c = document.createElementNS(NS, 'circle'); c.setAttribute('r', e.kind === 'out' ? 2 : 2.6); c.setAttribute('filter', 'url(#glow)');
+    const a = document.createElementNS(NS, 'animateMotion'); a.setAttribute('dur', spec[1] + 's'); a.setAttribute('repeatCount', 'indefinite');
+    a.setAttribute('begin', `${-(spec[1] / spec[0]) * i}s`);
+    const mp = document.createElementNS(NS, 'mpath'); mp.setAttribute('href', '#' + e.p.id); a.appendChild(mp);
+    c.appendChild(a); g.appendChild(c);
+  }
+  gParts.appendChild(g); e.parts = g;
+}
 function edge(id, kind, pts, state, title) {
   let e = edges.get(id);
   if (!e) {
@@ -124,21 +138,9 @@ function edge(id, kind, pts, state, title) {
   }
   e.pts = pts; e.seen = true; e.t.textContent = title || '';
   if (e.state !== state) { e.state = state; e.p.setAttribute('class', `ed ${kind} ${state}`); e.f.setAttribute('class', `fl ${kind} ${state}`); }
-  if (e.partKey !== state) {
-    e.parts?.remove(); e.parts = null; e.partKey = state;
-    const spec = { run: [3, 2.6], write: [2, 1.8], wait: [1, 6], think: [2, 3.2] }[state];
-    if (spec) {
-      const g = document.createElementNS(NS, 'g'); g.setAttribute('class', `pt ${state}`);
-      for (let i = 0; i < spec[0]; i++) {
-        const c = document.createElementNS(NS, 'circle'); c.setAttribute('r', kind === 'out' ? 2 : 2.6); c.setAttribute('filter', 'url(#glow)');
-        const a = document.createElementNS(NS, 'animateMotion'); a.setAttribute('dur', spec[1] + 's'); a.setAttribute('repeatCount', 'indefinite');
-        a.setAttribute('begin', `${-(spec[1] / spec[0]) * i}s`);
-        const mp = document.createElementNS(NS, 'mpath'); mp.setAttribute('href', '#e-' + cid(id)); a.appendChild(mp);
-        c.appendChild(a); g.appendChild(c);
-      }
-      gParts.appendChild(g); e.parts = g;
-    }
-  }
+  // the dots are (re)built in frame() once the line has a real path: started on an empty path, Safari/WebKit
+  // (the Mac app and iPhone) leaves them stuck in the map's top-left corner and they never move
+  if (e.partKey !== state) { e.parts?.remove(); e.parts = null; e.partKey = ''; }
 }
 
 // ---------- pick what to show for a job's output: its real newest media file, else its log ----------
@@ -355,13 +357,13 @@ function frame() {
   for (const e of edges.values()) {
     const ps = e.pts.map(([id, side]) => anchor(id, side));
     // a hidden end (e.g. a job folded into '+N more'): no path, and park its dots, which would otherwise sit at the map's top-left corner
-    if (ps.some(p => !p)) { if (e.d !== '') { e.d = ''; e.p.setAttribute('d', ''); e.f.setAttribute('d', ''); } if (e.parts && e.parts.style.display !== 'none') e.parts.style.display = 'none'; continue; }
-    if (e.parts && e.parts.style.display === 'none') e.parts.style.display = '';
+    if (ps.some(p => !p)) { if (e.d !== '') { e.d = ''; e.p.setAttribute('d', ''); e.f.setAttribute('d', ''); } if (e.parts) { e.parts.remove(); e.parts = null; e.partKey = ''; } continue; }
     let d;
     if (e.kind === 'wait') { const [a, b] = ps, bx = Math.min(a[0], b[0]) - 30; d = `M${a[0]},${a[1]} C${bx},${a[1]} ${bx},${b[1]} ${b[0]},${b[1]}`; }
     else if (ps.length === 4) d = `M${ps[0][0].toFixed(1)},${ps[0][1].toFixed(1)} ${seg(ps[0], ps[1])} ${seg(ps[2], ps[3])}`;
     else d = `M${ps[0][0].toFixed(1)},${ps[0][1].toFixed(1)} ${seg(ps[0], ps[1])}`;
     if (e.d !== d) { e.d = d; e.p.setAttribute('d', d); e.f.setAttribute('d', d); }
+    if (e.partKey !== e.state) buildDots(e); // path exists now, so the dots start on the line
   }
   requestAnimationFrame(frame);
 }
