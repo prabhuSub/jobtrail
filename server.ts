@@ -1,7 +1,7 @@
 // JobTrail: live view of what every Claude Code chat is running, on this Mac and (optionally) one more Mac over ssh.
 // One `ps` per poll per machine; the remote Mac is reached over a single ssh ControlMaster connection.
 // Settings: ~/.jobtrail/config.json (see config.example.json) or JOBTRAIL_* environment variables.
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { basename, join } from "path";
 import { demoSnapshot, demoHistory, demoDetail, demoPreview, demoFile } from "./demo.ts";
@@ -24,8 +24,13 @@ const REMOTE_HOST = process.env.JOBTRAIL_REMOTE ?? conf.remote?.host ?? "";
 const REMOTE = { name: process.env.JOBTRAIL_REMOTE_NAME ?? conf.remote?.name ?? REMOTE_HOST, device: conf.remote?.device ?? "desktop" as Device };
 // optional: a JSON file with {machines:[{name, job, state}]} shown as "declared" next to what is observed
 const PROGRESS = process.env.JOBTRAIL_PROGRESS ?? conf.progressFile?.replace(/^~/, HOME) ?? "";
-const SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6", "-o", "ControlMaster=auto",
-  "-o", `ControlPath=${DATA}/cm-%C`, "-o", "ControlPersist=600", "-o", "ServerAliveInterval=15", REMOTE_HOST];
+// One shared ssh connection to the remote Mac. It survives network changes (router restart, Wi-Fi switch):
+// keepalives notice a dead link within ~30 s, a dead shared connection is thrown away and rebuilt, and a fresh
+// connection gets longer to come up, since right after a network change each round trip can take seconds.
+const SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ControlMaster=auto", "-o", `ControlPath=${DATA}/cm-%C`,
+  "-o", "ControlPersist=600", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3",
+  "-o", "GSSAPIAuthentication=no", "-o", "PreferredAuthentications=publickey"]; // skip login methods that only cost round trips
+const SSH = ["ssh", "-T", ...SSH_OPTS, REMOTE_HOST];
 
 type MachineId = "local" | "remote";
 type Proc = { pid: number; ppid: number; etime: number; cpu: number; rss: number; cmd: string };
@@ -41,7 +46,7 @@ type Job = {
   outs?: { path: string; mtime: number; size: number }[]; tail?: string[];
 };
 type Chat = { sessionId?: string; title: string; status?: string; cwd?: string; via: "process" | "transcript" | "none" };
-type MachineState = { id: MachineId; name: string; device: Device; host: string; online: boolean; error?: string; gpu?: number; memFree?: number; load?: string; polledAt?: number; battery?: number; charging?: boolean };
+type MachineState = { id: MachineId; name: string; device: Device; host: string; online: boolean; reconnecting?: boolean; lastOk?: number; lastDur?: number; error?: string; gpu?: number; memFree?: number; load?: string; polledAt?: number; battery?: number; charging?: boolean };
 
 // ---------- shell helpers ----------
 async function run(argv: string[], timeoutMs = 10000): Promise<{ ok: boolean; out: string; err: string }> {
@@ -63,6 +68,14 @@ const sh = (machine: MachineId, script: string, timeoutMs?: number) => {
   return machine === "local" ? run(["/bin/sh", "-c", s], timeoutMs) : run([...SSH, s], timeoutMs);
 };
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+// is the shared connection to the remote Mac alive? (cheap local check, no network round trip when it is)
+const STARTED = Date.now();
+const masterAlive = async () => (await run(["ssh", ...SSH_OPTS, "-O", "check", REMOTE_HOST], 4000)).ok;
+// throw a dead shared connection away so the next check builds a fresh one
+async function dropMaster() {
+  await run(["ssh", ...SSH_OPTS, "-O", "exit", REMOTE_HOST], 4000);
+  try { for (const f of readdirSync(DATA)) if (f.startsWith("cm-")) unlinkSync(join(DATA, f)); } catch {}
+}
 
 const POLL = `echo "@@NOW $(date +%s)"; echo "@@GPU $(ioreg -r -d 1 -c IOAccelerator 2>/dev/null | grep -o '"Device Utilization %"=[0-9]*' | head -1 | cut -d= -f2)"; echo "@@MEM $(memory_pressure -Q 2>/dev/null | grep -o '[0-9]*%' | tail -1)"; echo "@@LOAD $(sysctl -n vm.loadavg)"; echo "@@BATT $(pmset -g batt 2>/dev/null | grep -Eo '[0-9]+%; [a-zA-Z ]+' | head -1)"; ps -ww -U $(id -u) -o pid=,ppid=,etime=,pcpu=,rss=,command=`;
 
@@ -243,7 +256,7 @@ async function chatFromTranscripts(job: Job): Promise<Chat | undefined> {
 // ---------- jobs ----------
 const machines: Partial<Record<MachineId, MachineState>> = {
   local: { id: "local", name: LOCAL.name, device: LOCAL.device, host: "this Mac", online: true },
-  ...(REMOTE_HOST ? { remote: { id: "remote", name: REMOTE.name, device: REMOTE.device, host: `ssh ${REMOTE_HOST}`, online: false } } : {}),
+  ...(REMOTE_HOST ? { remote: { id: "remote", name: REMOTE.name, device: REMOTE.device, host: `ssh ${REMOTE_HOST}`, online: false, reconnecting: true } } : {}),
 };
 let live = new Map<string, Job>();
 let history: Job[] = [];
@@ -380,11 +393,19 @@ async function finish(job: Job) {
 }
 
 async function poll(machine: MachineId) {
-  const r = await sh(machine, POLL, 12000);
   const m = machines[machine]!;
+  // a fresh connection (first check, or after the network changed) can take a while; checks over a live one are quick
+  // and on a slow link (e.g. a big copy filling the network) allow 3x the last good check's time, up to 40 s
+  const fresh = machine === "remote" && !(await masterAlive());
+  const t0 = Date.now();
+  const r = await sh(machine, POLL, fresh ? 60000 : Math.min(40000, Math.max(12000, (m.lastDur ?? 0) * 3)));
   if (!r.ok && !r.out.includes("@@NOW")) {
-    m.online = false; m.error = (r.err.trim().split("\n").pop() || "unreachable").slice(0, 160); return;
+    if (machine === "remote") await dropMaster(); // never keep retrying a connection the network change killed
+    m.online = false; m.error = (r.err.trim().split("\n").pop() || "unreachable").slice(0, 160);
+    m.reconnecting = machine === "remote" && Date.now() - (m.lastOk ?? STARTED) < 150000; // amber for ~2.5 min, then red
+    return;
   }
+  m.lastOk = Date.now(); m.lastDur = Date.now() - t0; m.reconnecting = false;
   const { meta, procs } = parsePoll(r.out);
   const now = Number(meta.NOW) || Math.floor(Date.now() / 1000);
   Object.assign(m, { online: true, error: undefined, polledAt: Date.now(), gpu: meta.GPU ? Number(meta.GPU) : undefined,

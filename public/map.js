@@ -228,7 +228,7 @@ function layout() {
     const m = S.machines.find(x => x.id === mid) || { id: mid, name: mid, online: false };
     const z = zones[mid], jobs = per[mid], running = jobs.filter(j => !j.endedAt && j.state === 'running');
     const zn = node('z:' + mid, 'zone', el => el.innerHTML = `<div class="zh"></div><div class="zb"></div>`);
-    cls(zn, `${mid} ${!m.online ? 'down' : running.length ? 'hot' : ''} ${(m.gpu || 0) > 40 ? 'gpuhot' : ''}`);
+    cls(zn, `${mid} ${!m.online ? (m.reconnecting ? 'reconn' : 'down') : running.length ? 'hot' : ''} ${(m.gpu || 0) > 40 ? 'gpuhot' : ''}`);
     place(zn, G.zx, z.y, G.zw, z.h);
     const dec = declaredFor(m);
     const svcs = S.live.filter(j => j.kind === 'service' && j.machine === mid).length;
@@ -244,7 +244,7 @@ function layout() {
     const svcList = S.live.filter(j => j.kind === 'service' && j.machine === mid && !j.endedAt);
     const svcNames = (() => { const c = new Map(); for (const j of svcList) c.set(j.label, (c.get(j.label) || 0) + 1); return [...c].map(([l, n]) => esc(l) + (n > 1 ? ` ×${n}` : '')).join(' · '); })();
     const zst = vertical ? ' style="top:auto;bottom:6px;height:auto;min-height:34px;padding:0 16px;text-align:center"' : ' style="padding:0 24px;text-align:center"';
-    setHTML(zn, '.zb', !m.online ? `<div class="zempty err"${zst}>offline · ${esc(m.error || 'unreachable')}</div>` : jobs.length ? '' :
+    setHTML(zn, '.zb', !m.online ? (m.reconnecting ? `<div class="zempty reconn"${zst}>reconnecting… · showing the last jobs seen ${m.lastOk ? Math.round((Date.now() - m.lastOk) / 1000) + ' s ago' : ''}</div>` : `<div class="zempty err"${zst}>offline · ${esc(m.error || 'unreachable')}</div>`) : jobs.length ? '' :
       `<div class="zempty"${zst}>${svcList.length ? `idle · ${svcList.length} service${svcList.length > 1 ? 's' : ''}: ${svcNames}` : 'idle · nothing heavy running'}</div>`);
     zn.machine = m;
 
@@ -252,13 +252,13 @@ function layout() {
     // the machine itself: a drawn laptop (live screen) or small desktop Mac (live front light)
     const dn = node('m:' + mid, 'device', el => el.innerHTML = `<span class="dv">${m.device === 'desktop' ? MINI_SVG : MBP_SVG}${m.device === 'desktop' ? '' : '<span class="scr"></span>'}</span><span class="dl"></span>`);
     const waitingN = jobs.filter(j => !j.endedAt && j.state === 'waiting').length;
-    cls(dn, `${m.device || 'laptop'} ${!m.online ? 'down' : running.length ? 'busy' : waitingN ? 'some' : 'idle'}`);
+    cls(dn, `${m.device || 'laptop'} ${!m.online ? (m.reconnecting ? 'reconn' : 'down') : running.length ? 'busy' : waitingN ? 'some' : 'idle'}`);
     dn.el.style.setProperty('--g', ((m.gpu || 0) / 100).toFixed(2));
     const gbar = `<span class="sb"><em>GPU</em><i><b style="width:${m.gpu || 0}%"></b></i><strong>${m.gpu == null ? '—' : m.gpu + '%'}</strong></span>`;
     const mbar = `<span class="sb"><em>MEM</em><i><b style="width:${m.memFree || 0}%;background:${(m.memFree ?? 100) < 20 ? '#db6b67' : '#7aa36a'}"></b></i><strong>${m.memFree == null ? '—' : m.memFree + '%'}</strong></span>`;
     const jl = `${running.length} running${waitingN ? ` · ${waitingN} waiting` : ''}`;
     if (m.device !== 'desktop') setHTML(dn, '.scr', m.online ? `${gbar}${mbar}<span class="sj">${jl}</span><span class="sc"><i></i><i></i><i></i></span>` : `<span class="sj err">offline</span>`);
-    setHTML(dn, '.dl', `<b>${esc(m.name)}</b><span>${mid === 'remote' ? (m.online ? 'via ssh' : 'offline') : 'this Mac'}</span>${m.device === 'desktop' && m.online ? `<span class="ms">${gbar}${mbar}</span><span class="sj">${jl}</span>` : ''}`);
+    setHTML(dn, '.dl', `<b>${esc(m.name)}</b><span>${mid === 'remote' ? (m.online ? 'via ssh' : m.reconnecting ? 'reconnecting…' : 'offline') : 'this Mac'}</span>${m.device === 'desktop' && m.online ? `<span class="ms">${gbar}${mbar}</span><span class="sj">${jl}</span>` : ''}`);
     dn.machine = m;
     if (vertical) place(dn, G.zx + G.zw / 2 - G.mw / 2, cy0 + 6, G.mw, G.mh);
     else place(dn, G.zx + 18, cy0 + Math.max(0, (ch - G.mh) / 2), G.mw, G.mh);
@@ -466,7 +466,7 @@ const Card = (() => {
     } else if (id.startsWith('z:') || id.startsWith('g:') || id.startsWith('m:')) {
       const mid = id.slice(2), m = S.machines.find(x => x.id === mid) || {}, jobs = S.live.filter(j => j.machine === mid);
       const dec = declaredFor(m);
-      head = `<span class="fst ${m.online ? 'running' : 'failed'}"></span><div><b>${esc(m.name)}</b><span>${mid === 'remote' ? `${esc(m.host)} · one shared ssh connection` : 'this Mac'} · ${m.online ? 'online' : 'offline'}</span></div>`;
+      head = `<span class="fst ${m.online ? 'running' : m.reconnecting ? 'waiting' : 'failed'}"></span><div><b>${esc(m.name)}</b><span>${mid === 'remote' ? `${esc(m.host)} · one shared ssh connection` : 'this Mac'} · ${m.online ? 'online' : 'offline'}</span></div>`;
       body = `<div class="dgrid">${kv('GPU', m.gpu == null ? '—' : m.gpu + '%')}${kv('Memory free', m.memFree == null ? '—' : m.memFree + '%')}${kv('Load', esc(m.load ?? '—'))}${kv('Last poll', m.polledAt ? ago(m.polledAt) : '—')}${m.error ? kv('Error', esc(m.error)) : ''}${dec ? kv('Declared', `${esc(dec.job)} (${esc(dec.state)})`) : ''}</div>
         <div class="dsec"><div class="k">GPU history</div><div class="bigspark">${spark(gpuHist[mid], 500, 50, '#e9a23b', 100) || '<span class="muted">collecting…</span>'}</div></div>
         <div class="dsec"><div class="k">Memory free history</div><div class="bigspark">${spark(memHist[mid], 500, 40, '#7aa36a', 100) || '<span class="muted">collecting…</span>'}</div></div>
