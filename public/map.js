@@ -215,8 +215,11 @@ function layout() {
     else {
       let zh0;
       if (need(A) + need(B) <= room) zh0 = need(A) + (room - need(A) - need(B)) * Math.max(1, per[A].length) / (Math.max(1, per[A].length) + Math.max(1, per[B].length));
+      // too many jobs to show everything: the quieter Mac gets just what it needs, the busier one the rest
+      // (was a 50/50 split, which left a 1-job Mac half empty while the other hid jobs under "+N more")
+      else if (need(A) <= need(B) && need(A) < room / 2) zh0 = need(A);
       else if (need(B) < room / 2) zh0 = room - need(B);
-      else zh0 = Math.max(room / 2, Math.min(need(A), room / 2));
+      else zh0 = room * Math.max(1, per[A].length) / (Math.max(1, per[A].length) + Math.max(1, per[B].length));
       zones[A] = { y: top, h: Math.max(zmin, zh0) };
       zones[B] = { y: top + zones[A].h + 18, h: Math.max(zmin, room - zones[A].h) };
     }
