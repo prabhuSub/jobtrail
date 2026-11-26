@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000000"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-title" content="JobTrail"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>JobTrail</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;650&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;650&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 :root{--bg:#000;--surface:#181818;--raised:#1f1f1f;--hover:#272727;--line:#313131;--text:#fff;--soft:#d1d1d1;--dim:#9b9b9b;--faint:#686868;--accent:#e9a23b;--accent-bg:#2e220f;--danger:#db6b67;--danger-bg:#2a1514;--success:#7aa36a;--success-bg:#141f18;--blue:#6ea8d9;--font:"Geist","Manrope",-apple-system,sans-serif;--mono:"Geist Mono",ui-monospace,"SF Mono",monospace;--ease:cubic-bezier(.32,.72,0,1);--ease-out:cubic-bezier(.23,1,.32,1)}
 *{box-sizing:border-box;margin:0}
@@ -422,9 +422,13 @@ function size(b){if(b==null)return'';const u=['B','KB','MB','GB'];let i=0;while(
 const mem=kb=>size(kb*1024);
 const cssId=id=>id.replace(/[^a-z0-9]/gi,'_');
 
+let es=null;
 function connect(){
-  const es=new EventSource('/api/stream');
-  es.onmessage=e=>{S=JSON.parse(e.data);lastMsg=Date.now();
+  // first paint from the small gzipped /api/state (also on a reconnect); the stream's next snapshot replaces it
+  fetch('/api/state').then(r=>r.ok?r.json():null).then(d=>{if(d&&(!S||d.now>(S.now||0))){if(!d.recent)d.recent=S?.recent||[];S=d;render()}}).catch(()=>{});
+  if(es)es.close();
+  es=new EventSource('/api/stream');
+  es.onmessage=e=>{const m=JSON.parse(e.data);if(!m.recent)m.recent=S?.recent||[];S=m;lastMsg=Date.now();
     // a rebuilt app (new page files) reaches every open window and the phone by itself
     if(S.version){if(window.jtVersion&&window.jtVersion!==S.version){hardReload();return}window.jtVersion=S.version}
     render();Sound.update(S);if(!window.jtLinked){window.jtLinked=1;setTimeout(deepLink,900)}};
@@ -523,7 +527,9 @@ function setRange(k){Sound.ui('tab');range=k;localSet('jt.range',k);hist=null;hi
 function pick(id){if(!open.has(id)){open.add(id);fetchDetail(id)}render();const el=document.getElementById('d-'+cssId(id));const row=el?.previousElementSibling;if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.classList.add('flash')}}
 function hardReload(){const u=new URL(location.href);u.searchParams.set('r',Date.now().toString(36));location.replace(u.toString())}
 // coming back to the phone app: the live stream may have died in the background
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&lastMsg&&Date.now()-lastMsg>8000)hardReload()});
+// back after being hidden (another app or Hyperday tab): reconnect and keep the page on screen; reload fully only
+// if nothing arrives within a few seconds (a full reload is what made coming back take seconds)
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&lastMsg&&Date.now()-lastMsg>8000){connect();setTimeout(()=>{if(Date.now()-lastMsg>8000)hardReload()},5000)}});
 // ---- phone navigation ----
 function navMap(){Sound.ui('tab');JobMap.card.close();scrollTo({top:0,behavior:'smooth'})}
 function navJobs(){Sound.ui('tab');JobMap.card.close();const el=document.getElementById('list');scrollTo({top:el.getBoundingClientRect().top+scrollY-70,behavior:'smooth'})}

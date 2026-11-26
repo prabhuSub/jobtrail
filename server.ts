@@ -578,8 +578,13 @@ const TOKEN_FILE = join(DATA, "token");
 if (!existsSync(TOKEN_FILE)) writeFileSync(TOKEN_FILE, crypto.randomUUID().replace(/-/g, ""), { mode: 0o600 });
 const TOKEN = readFileSync(TOKEN_FILE, "utf8").trim();
 const clients = new Set<ReadableStreamDefaultController>();
+// The 24 h "recent" list is ~90% of a snapshot (~250 KB) and rarely changes, so after a client's first full
+// snapshot it is only sent again when it changed; the page keeps the last one. A phone gets ~25 KB/s, not ~280.
+let lastRecent = "";
 function broadcast() {
-  const msg = `data: ${JSON.stringify(snapshot())}\n\n`;
+  const snap: any = snapshot(), recent = JSON.stringify(snap.recent);
+  if (recent === lastRecent) delete snap.recent; else lastRecent = recent;
+  const msg = `data: ${JSON.stringify(snap)}\n\n`;
   for (const c of clients) { try { c.enqueue(msg); } catch { clients.delete(c); } }
 }
 async function loop(machine: MachineId) {
