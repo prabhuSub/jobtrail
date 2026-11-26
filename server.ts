@@ -501,10 +501,12 @@ async function refreshActivity() {
   activity = next;
 }
 
+// a finished job doesn't need its process list or a huge command line in lists and the live stream
+const slim = (j: Job): Job => ({ ...j, pids: [], command: (j.command ?? "").slice(0, 1200), mainCmd: (j.mainCmd ?? "").slice(0, 300), tail: j.tail?.slice(-2) });
 function snapshot() {
   if (DEMO) return demoSnapshot(VERSION);
   return { now: Date.now(), machines: Object.values(machines), live: [...live.values()].sort((a, b) => b.startedAt - a.startedAt),
-    recent: history.filter((j) => (j.endedAt ?? 0) > Date.now() - 86400e3).slice(0, 200), progress: progress(), chats: [...livePids.values()], activity, version: VERSION };
+    recent: history.filter((j) => (j.endedAt ?? 0) > Date.now() - 86400e3).slice(0, 200).map(slim), progress: progress(), chats: [...livePids.values()], activity, version: VERSION };
 }
 
 // ---------- real previews of output files ----------
@@ -591,7 +593,14 @@ async function loop(machine: MachineId) {
 const server = Bun.serve({
   port: PORT, hostname: process.env.JOBTRAIL_HOST ?? "0.0.0.0", idleTimeout: 0,
   async fetch(req, srv) {
-    const res = await route(req, srv);
+    let res = await route(req, srv);
+    // compress JSON for clients that accept it (browsers, iPhone apps): ~8x smaller, so it still arrives quickly
+    // on a slow or congested network (Hyperday on the phone gives up after a few seconds)
+    if ((res.headers.get("content-type") ?? "").includes("application/json") && /\bgzip\b/.test(req.headers.get("accept-encoding") ?? "")) {
+      const body = Bun.gzipSync(new Uint8Array(await res.arrayBuffer()));
+      const headers = new Headers(res.headers); headers.set("Content-Encoding", "gzip"); headers.set("Vary", "Accept-Encoding"); headers.delete("Content-Length");
+      res = new Response(body, { status: res.status, headers });
+    }
     if ((req as any).jtSetCookie) res.headers.append("Set-Cookie", `jt=${TOKEN}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`);
     return res;
   },
@@ -643,7 +652,7 @@ async function route(req: Request, srv: any): Promise<Response> {
     }
     if (url.pathname === "/api/history") {
       const days = Math.min(HIST_DAYS, Number(url.searchParams.get("days") ?? 7) || 7), cut = Date.now() - days * 86400e3;
-      return Response.json(history.filter((j) => (j.endedAt ?? 0) > cut));
+      return Response.json(history.filter((j) => (j.endedAt ?? 0) > cut).map(slim));
     }
     if (url.pathname === "/api/detail") return Response.json(await detail(url.searchParams.get("id") ?? ""));
     if (url.pathname === "/api/stream") {
