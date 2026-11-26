@@ -374,6 +374,10 @@ details.svc[open]>summary h2:after{content:" ↑"}
 html.resizing,html.resizing *{user-select:none!important;-webkit-user-select:none!important;cursor:row-resize!important}
 html.resizing .mn,html.resizing .mn *{transition:none!important}
 .legend{bottom:6px;right:18px;left:18px;justify-content:flex-end;height:18px;align-items:center}
+.sndbtn{display:grid;place-items:center;width:30px;height:24px;padding:0;border:1px solid var(--line);background:var(--surface);color:var(--soft);border-radius:8px;cursor:pointer}
+.sndbtn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.sndbtn .x{display:none}.sndbtn.off{color:var(--faint)}.sndbtn.off .w{display:none}.sndbtn.off .x{display:inline}
+.sndbtn:hover{color:var(--text)}
 </style>
 </head>
 <body>
@@ -383,7 +387,7 @@ html.resizing .mn,html.resizing .mn *{transition:none!important}
     <div style="min-width:0"><div class="project-name">JobTrail</div><div class="file-name">What every Claude Code chat is running, live</div></div>
   </div>
   <nav class="switcher" id="tabs"></nav>
-  <div class="status"><button class="phonebtn" id="phoneBtn" hidden onclick="showPhone()">iPhone</button><div class="badge" id="runBadge"><span class="dot"></span><span>—</span></div><div class="watching" id="watch">connecting…</div></div>
+  <div class="status"><button class="sndbtn" data-sound-btn onclick="Sound.toggle()" aria-label="Sound" title="Sound on · click to mute"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="w" d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/><path class="x" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><button class="phonebtn" id="phoneBtn" hidden onclick="showPhone()">iPhone</button><div class="badge" id="runBadge"><span class="dot"></span><span>—</span></div><div class="watching" id="watch">connecting…</div></div>
 </header>
 <section class="map" id="map"></section>
 <div class="split" id="split" title="Drag to resize the map and the list (double-click to reset)"><span></span></div>
@@ -397,6 +401,7 @@ html.resizing .mn,html.resizing .mn *{transition:none!important}
   <button onclick="navMachines()"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="10" rx="1.6"/><path d="M2 19h20"/></svg><span>Macs</span></button>
   <button onclick="hardReload()"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg><span>Refresh</span></button>
 </nav>
+<script src="/sound.js"></script>
 <script src="/map.js"></script>
 <script>
 const $=s=>document.querySelector(s);
@@ -418,7 +423,7 @@ function connect(){
   es.onmessage=e=>{S=JSON.parse(e.data);lastMsg=Date.now();
     // a rebuilt app (new page files) reaches every open window and the phone by itself
     if(S.version){if(window.jtVersion&&window.jtVersion!==S.version){hardReload();return}window.jtVersion=S.version}
-    render();if(!window.jtLinked){window.jtLinked=1;setTimeout(deepLink,900)}};
+    render();Sound.update(S);if(!window.jtLinked){window.jtLinked=1;setTimeout(deepLink,900)}};
   es.onerror=()=>{$('#watch').textContent='reconnecting…';$('#watch').classList.add('stale')};
 }
 const visible=j=>filter==='all'||j.machine===filter;
@@ -510,14 +515,14 @@ async function fetchDetail(id){
     if(j&&el){const pre=el.querySelector('pre.log'),atBottom=!pre||pre.scrollTop+pre.clientHeight>=pre.scrollHeight-4;el.innerHTML=detailHtml(j);const p2=el.querySelector('pre.log');if(p2&&atBottom)p2.scrollTop=p2.scrollHeight}}catch{}
 }
 async function loadHist(){histAt=Date.now();try{const r=await fetch('/api/history?days='+range);hist=await r.json();render()}catch{}}
-function setRange(k){range=k;localSet('jt.range',k);hist=null;histAt=0;render()}
+function setRange(k){Sound.ui('tab');range=k;localSet('jt.range',k);hist=null;histAt=0;render()}
 function pick(id){if(!open.has(id)){open.add(id);fetchDetail(id)}render();const el=document.getElementById('d-'+cssId(id));const row=el?.previousElementSibling;if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.classList.add('flash')}}
 function hardReload(){const u=new URL(location.href);u.searchParams.set('r',Date.now().toString(36));location.replace(u.toString())}
 // coming back to the phone app: the live stream may have died in the background
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&lastMsg&&Date.now()-lastMsg>8000)hardReload()});
 // ---- phone navigation ----
-function navMap(){JobMap.card.close();scrollTo({top:0,behavior:'smooth'})}
-function navJobs(){JobMap.card.close();const el=document.getElementById('list');scrollTo({top:el.getBoundingClientRect().top+scrollY-70,behavior:'smooth'})}
+function navMap(){Sound.ui('tab');JobMap.card.close();scrollTo({top:0,behavior:'smooth'})}
+function navJobs(){Sound.ui('tab');JobMap.card.close();const el=document.getElementById('list');scrollTo({top:el.getBoundingClientRect().top+scrollY-70,behavior:'smooth'})}
 function navRunning(){
   const live=S?S.live.filter(j=>j.kind==='job'):[],mn=id=>esc(S.machines.find(m=>m.id===id)?.name||id);
   const row=j=>`<button class="jrow ${j.state}" data-open="j:${esc(j.id)}"><span class="fst ${j.state}"></span><b>${esc(j.label)}</b><span>${mn(j.machine)} · ${dur(Date.now()-j.startedAt)}</span></button>`;
@@ -540,7 +545,7 @@ function deepLink(){const h=new URLSearchParams(location.hash.slice(1));
   if(h.get('open')){const id=h.get('open'),el=document.querySelector(`.mn[data-id="${CSS.escape(id)}"]`);JobMap.card.open(id,el)}
   if(h.get('pick'))pick(h.get('pick'));
   if(h.get('phone')!=null&&window.phoneURL)showPhone();}
-function setFilter(m){filter=m;localSet('jt.filter',m);render()}
+function setFilter(m){Sound.ui('tab');filter=m;localSet('jt.filter',m);render()}
 function tick(){
   document.querySelectorAll('[data-start]').forEach(e=>e.textContent=dur(Date.now()-+e.dataset.start));
   const w=$('#watch');if(!lastMsg)return;const s=Math.round((Date.now()-lastMsg)/1000);
@@ -549,6 +554,7 @@ function tick(){
 setInterval(tick,1000);
 setInterval(()=>{for(const id of open)fetchDetail(id)},3000);
 JobMap.init(document.getElementById('map'),pick);
+Sound.init();
 // resizable top/bottom halves: drag the bar under the map; remembered per Mac
 (()=>{const map=document.getElementById('map'),bar=document.getElementById('split'),html=document.documentElement;
   const clamp=h=>Math.round(Math.max(300,Math.min(innerHeight-140,h)));

@@ -384,7 +384,7 @@ const Card = (() => {
     el.querySelector('.fx').onclick = close;
     el.addEventListener('click', ev => { const a = ev.target.closest('[data-open]'); if (a) { ev.stopPropagation(); openId(a.dataset.open, null); } const p = ev.target.closest('[data-pick]'); if (p) { close(); onPick(p.dataset.pick); } });
   }
-  function close() { if (!el) return; el.classList.remove('on'); cur = null; detail = null; mediaKey = ''; clearInterval(timer); el.querySelectorAll('audio,video').forEach(m => m.pause()); document.querySelectorAll('.mn.sel').forEach(x => x.classList.remove('sel')); }
+  function close() { if (!el) return; if (el.classList.contains('on')) window.Sound?.ui('close'); el.classList.remove('on'); cur = null; detail = null; mediaKey = ''; clearInterval(timer); el.querySelectorAll('audio,video').forEach(m => m.pause()); document.querySelectorAll('.mn.sel').forEach(x => x.classList.remove('sel')); }
   function position(anchorEl) {
     const phone = innerWidth < 720;
     el.classList.toggle('sheet', phone);
@@ -397,6 +397,7 @@ const Card = (() => {
     el.style.left = x + 'px'; el.style.top = y + 'px';
   }
   function openId(id, anchorEl) {
+    window.Sound?.ui('open');
     ensure();
     document.querySelectorAll('.mn.sel').forEach(x => x.classList.remove('sel'));
     const n = nodes.get(id); if (n) n.el.classList.add('sel');
@@ -490,6 +491,7 @@ const Card = (() => {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
   document.addEventListener('pointerdown', e => { if (el?.classList.contains('on') && !el.contains(e.target) && !e.target.closest?.('.mn')) close(); });
   function custom(head, body, width) {
+    window.Sound?.ui('open');
     ensure(); clearInterval(timer); el.querySelectorAll('audio,video').forEach(m => m.pause());
     cur = { id: 'custom', custom: true };
     el.querySelector('.fh').innerHTML = head; el.querySelector('.fdyn').innerHTML = body; el.querySelector('.fmedia').innerHTML = ''; mediaKey = '';

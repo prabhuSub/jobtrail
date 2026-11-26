@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     window.center()
     window.setFrameAutosaveName("JobTrailMain")
     let cfg = WKWebViewConfiguration()
+    cfg.mediaTypesRequiringUserActionForPlayback = [] // JobTrail's soft sounds can start without a click
     web = WKWebView(frame: window.contentView!.bounds, configuration: cfg)
     web.autoresizingMask = [.width, .height]
     web.setValue(false, forKey: "drawsBackground")
