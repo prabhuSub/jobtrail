@@ -12,7 +12,9 @@
   function ensure() {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
-      ctx = new AC();
+      // 'playback' = a larger audio buffer: these sounds don't need instant timing, and it rides through CPU spikes
+      // (heavy builds/renders) that otherwise drop audio and crackle in the speakers
+      try { ctx = new AC({ latencyHint: 'playback' }); } catch { ctx = new AC(); }
       const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -28; comp.ratio.value = 6; comp.connect(ctx.destination);
       master = ctx.createGain(); master.gain.value = muted || document.hidden ? 0 : VOL; master.connect(comp);
       // hum: two detuned low sines through a lowpass that breathes slowly
