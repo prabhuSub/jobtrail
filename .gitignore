@@ -6,3 +6,4 @@ ios/Sources/Assets.xcassets/AppIcon.appiconset/icon.png
 node_modules/
 .DS_Store
 *.part
+vitals/jtvitals

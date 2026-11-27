@@ -46,7 +46,11 @@ type Job = {
   outs?: { path: string; mtime: number; size: number }[]; tail?: string[];
 };
 type Chat = { sessionId?: string; title: string; status?: string; cwd?: string; via: "process" | "transcript" | "none" };
-type MachineState = { id: MachineId; name: string; device: Device; host: string; online: boolean; reconnecting?: boolean; lastOk?: number; lastDur?: number; error?: string; gpu?: number; memFree?: number; load?: string; polledAt?: number; battery?: number; charging?: boolean };
+type MachineState = { id: MachineId; name: string; device: Device; host: string; online: boolean; reconnecting?: boolean; lastOk?: number; lastDur?: number; error?: string; gpu?: number; memFree?: number; load?: string; polledAt?: number; battery?: number; charging?: boolean;
+  // vitals from ~/.jobtrail/bin/jtvitals (vitals/jtvitals.swift): CPU %, chip °C (avg + hottest), fan rpm, thermal state,
+  // battery health / cycles / °C / on power, free disk, uptime
+  vitals?: { cpu?: number; cpuT?: number; cpuTMax?: number; fans?: number[]; fanMax?: number[]; therm?: string; diskFreeGB?: number; diskGB?: number; upSec?: number;
+    batt?: { pct?: number; ac?: boolean; charging?: boolean; health?: number; cycles?: number; temp?: number; minLeft?: number } } };
 
 // ---------- shell helpers ----------
 async function run(argv: string[], timeoutMs = 10000): Promise<{ ok: boolean; out: string; err: string }> {
@@ -77,7 +81,7 @@ async function dropMaster() {
   try { for (const f of readdirSync(DATA)) if (f.startsWith("cm-")) unlinkSync(join(DATA, f)); } catch {}
 }
 
-const POLL = `echo "@@NOW $(date +%s)"; echo "@@GPU $(ioreg -r -d 1 -c IOAccelerator 2>/dev/null | grep -o '"Device Utilization %"=[0-9]*' | head -1 | cut -d= -f2)"; echo "@@MEM $(memory_pressure -Q 2>/dev/null | grep -o '[0-9]*%' | tail -1)"; echo "@@LOAD $(sysctl -n vm.loadavg)"; echo "@@BATT $(pmset -g batt 2>/dev/null | grep -Eo '[0-9]+%; [a-zA-Z ]+' | head -1)"; ps -ww -U $(id -u) -o pid=,ppid=,etime=,pcpu=,rss=,command=`;
+const POLL = `echo "@@NOW $(date +%s)"; echo "@@GPU $(ioreg -r -d 1 -c IOAccelerator 2>/dev/null | grep -o '"Device Utilization %"=[0-9]*' | head -1 | cut -d= -f2)"; echo "@@MEM $(memory_pressure -Q 2>/dev/null | grep -o '[0-9]*%' | tail -1)"; echo "@@LOAD $(sysctl -n vm.loadavg)"; echo "@@BATT $(pmset -g batt 2>/dev/null | grep -Eo '[0-9]+%; [a-zA-Z ]+' | head -1)"; echo "@@VIT $($HOME/.jobtrail/bin/jtvitals 2>/dev/null)"; ps -ww -U $(id -u) -o pid=,ppid=,etime=,pcpu=,rss=,command=`;
 
 function parseEtime(s: string) {
   let days = 0, rest = s;
@@ -411,7 +415,8 @@ async function poll(machine: MachineId) {
   Object.assign(m, { online: true, error: undefined, polledAt: Date.now(), gpu: meta.GPU ? Number(meta.GPU) : undefined,
     memFree: meta.MEM ? parseInt(meta.MEM) : undefined, load: meta.LOAD?.replace(/[{}]/g, "").trim().split(/\s+/)[0],
     // battery (laptops only; a Mac mini reports nothing): "71%; discharging" / "100%; charged"
-    battery: meta.BATT ? parseInt(meta.BATT) : undefined, charging: meta.BATT ? /(^|; )(charging|charged|finishing charge|AC attached)/.test(meta.BATT) : undefined });
+    battery: meta.BATT ? parseInt(meta.BATT) : undefined, charging: meta.BATT ? /(^|; )(charging|charged|finishing charge|AC attached)/.test(meta.BATT) : undefined,
+    vitals: (() => { try { return meta.VIT ? JSON.parse(meta.VIT) : undefined; } catch { return undefined; } })() });
   const jobs = buildJobs(machine, procs, now);
   // ps elapsed time has 1 s jitter: keep the id of the same pid if its start time is within 90 s
   for (const j of jobs) {

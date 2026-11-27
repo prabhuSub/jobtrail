@@ -64,6 +64,26 @@ function declaredFor(m) { const n = norm(m.name); return (S?.progress?.machines 
 // ---------- state ----------
 let snap = false; // while the divider is dragged, boxes follow the new size at once (no easing lag)
 let root, svg, layer, gEdges, gParts, W = 0, H = 0, S = null, onPick = () => {}, vertical = false;
+// vitals (from jtvitals on each Mac): small chips on the Mac's header, a full list in its detail panel
+const HEAT = { nominal: 'Cool', fair: 'Warm', serious: 'Hot', critical: 'Throttling' };
+const tCol = (t) => t == null ? '' : t >= 95 ? '#db6b67' : t >= 80 ? '#e9a23b' : '#7aa36a';
+function vitChips(m, small) {
+  const v = m.vitals; if (!v || !m.online) return '';
+  const fan = v.fans && v.fans.length ? Math.max(...v.fans) : null, b = v.batt;
+  return `${small ? '' : `<span class="zm" title="CPU in use"><em>CPU</em><strong>${v.cpu ?? '—'}%</strong></span>`}`
+    + `${v.cpuT != null ? `<span class="zm" title="chip temperature (average; hottest ${v.cpuTMax ?? v.cpuT}°)"><em>TEMP</em><strong style="color:${tCol(v.cpuTMax ?? v.cpuT)}">${v.cpuT}°</strong></span>` : ''}`
+    + `${fan != null && !small ? `<span class="zm" title="fan speed"><em>FAN</em><strong>${fan ? (fan / 1000).toFixed(1) + 'k' : 'off'}</strong></span>` : ''}`
+    + `${b && b.pct != null ? `<span class="zm" title="battery${b.ac ? ' · on power' : ''}"><em>BAT</em><strong style="color:${b.pct < 20 && !b.ac ? '#db6b67' : ''}">${b.pct}%${b.ac ? '⚡︎' : ''}</strong></span>` : ''}`;
+}
+function vitPanel(m) {
+  const v = m.vitals; if (!v) return '';
+  const k = (a, b) => `<div class="kv"><div class="k">${a}</div><div class="v">${b}</div></div>`, b = v.batt;
+  const up = v.upSec != null ? (v.upSec >= 86400 ? Math.floor(v.upSec / 86400) + ' d ' : '') + Math.floor(v.upSec % 86400 / 3600) + ' h' : '—';
+  const fans = v.fans && v.fans.length ? v.fans.map((r, i) => `${r} rpm${v.fanMax?.[i] ? ` (${Math.round(r / v.fanMax[i] * 100)}%)` : ''}`).join(' · ') : '—';
+  return `<div class="dsec"><div class="k">Vitals</div><div class="dgrid">${k('CPU', (v.cpu ?? '—') + '%')}${k('Chip temp', v.cpuT != null ? `<span style="color:${tCol(v.cpuTMax ?? v.cpuT)}">${v.cpuT}°C</span> · hottest ${v.cpuTMax ?? v.cpuT}°C` : '—')}${k('Fans', fans)}${k('Heat', HEAT[v.therm] || '—')}`
+    + `${b ? k('Battery', `${b.pct ?? '—'}% · ${b.charging ? 'charging' : b.ac ? 'on power' : 'on battery'}${b.minLeft && !b.ac ? ` · ${Math.floor(b.minLeft / 60)}h ${b.minLeft % 60}m left` : ''}`) + k('Battery health', `${b.health ?? '—'}% · ${b.cycles ?? '—'} cycles${b.temp != null ? ` · ${b.temp}°C` : ''}`) : ''}`
+    + `${k('Disk free', v.diskFreeGB != null ? `${v.diskFreeGB} GB of ${v.diskGB} GB` : '—')}${k('Up', up)}</div></div>`;
+}
 const nodes = new Map(), edges = new Map(), cpuHist = new Map(), gpuHist = {}, memHist = {};
 const firstSeen = new Map();
 
@@ -239,6 +259,7 @@ function layout() {
     setHTML(zn, '.zh', `<span class="zdot"></span><b>${esc(m.name)}</b>${small ? '' : `<span class="zhost">${esc(m.host || '')}</span>`}
       <span class="zm" title="GPU utilisation"><em>GPU</em>${small ? '' : `<span class="zbar"><i style="width:${g || 0}%"></i></span>`}<strong>${g == null ? '—' : g + '%'}</strong>${spark(gpuHist[mid], small ? 36 : 54, 16, '#e9a23b', 100)}</span>
       <span class="zm" title="memory free"><em>MEM</em>${small ? '' : `<span class="zbar"><i style="width:${f || 0}%;background:${f != null && f < 20 ? '#db6b67' : '#7aa36a'}"></i></span>`}<strong>${f == null ? '—' : f + '%'}</strong></span>
+      ${vitChips(m, small)}
       ${small ? '' : `<span class="zm"><em>LOAD</em><strong>${esc(m.load ?? '—')}</strong></span><span class="zm"><em>JOBS</em><strong>${jobs.filter(j => !j.endedAt).length}</strong></span>`}
       ${svcs ? `<span class="zm muted">+${svcs} svc</span>` : ''}
       ${dec && !small ? `<span class="zdec">declared: ${esc(dec.job)} · ${esc(dec.state)}</span>` : ''}`);
@@ -471,6 +492,7 @@ const Card = (() => {
       const dec = declaredFor(m);
       head = `<span class="fst ${m.online ? 'running' : m.reconnecting ? 'waiting' : 'failed'}"></span><div><b>${esc(m.name)}</b><span>${mid === 'remote' ? `${esc(m.host)} · one shared ssh connection` : 'this Mac'} · ${m.online ? 'online' : 'offline'}</span></div>`;
       body = `<div class="dgrid">${kv('GPU', m.gpu == null ? '—' : m.gpu + '%')}${kv('Memory free', m.memFree == null ? '—' : m.memFree + '%')}${kv('Load', esc(m.load ?? '—'))}${kv('Last poll', m.polledAt ? ago(m.polledAt) : '—')}${m.error ? kv('Error', esc(m.error)) : ''}${dec ? kv('Declared', `${esc(dec.job)} (${esc(dec.state)})`) : ''}</div>
+        ${vitPanel(m)}
         <div class="dsec"><div class="k">GPU history</div><div class="bigspark">${spark(gpuHist[mid], 500, 50, '#e9a23b', 100) || '<span class="muted">collecting…</span>'}</div></div>
         <div class="dsec"><div class="k">Memory free history</div><div class="bigspark">${spark(memHist[mid], 500, 40, '#7aa36a', 100) || '<span class="muted">collecting…</span>'}</div></div>
         <div class="dsec"><div class="k">Running here</div>${jobs.filter(j => j.kind === 'job').map(j => `<button class="jrow ${j.state}" data-open="j:${esc(j.id)}"><span class="fst ${j.state}"></span><b>${esc(j.label)}</b><span>${esc(j.chat?.title || '')} · ${dur(Date.now() - j.startedAt)}</span></button>`).join('') || '<span class="muted">nothing heavy</span>'}</div>
