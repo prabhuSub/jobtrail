@@ -14,21 +14,38 @@
       const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
       // 'playback' = a larger audio buffer: these sounds don't need instant timing, and it rides through CPU spikes
       // (heavy builds/renders) that otherwise drop audio and crackle in the speakers
-      try { ctx = new AC({ latencyHint: 'playback' }); } catch { ctx = new AC(); }
+      // v2: a 200 ms buffer (numeric hint asks for more than 'playback') — rides through GPU-heavy renders too
+      try { ctx = new AC({ latencyHint: 0.2 }); } catch { try { ctx = new AC({ latencyHint: 'playback' }); } catch { ctx = new AC(); } }
       const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -28; comp.ratio.value = 6; comp.connect(ctx.destination);
       master = ctx.createGain(); master.gain.value = muted || document.hidden ? 0 : VOL; master.connect(comp);
-      // hum: two detuned low sines through a lowpass that breathes slowly
-      humFilter = ctx.createBiquadFilter(); humFilter.type = 'lowpass'; humFilter.frequency.value = 220; humFilter.Q.value = 2;
+      // hum: the same low sines + slowly breathing lowpass, but rendered ONCE into a 10 s seamless loop (all tones fit
+      // whole cycles in 10 s) and played as one looping buffer. Computing oscillators + an audio-rate filter sweep live
+      // dropped out under heavy GPU renders (heard as static); a looping buffer costs the audio thread almost nothing.
+      humFilter = ctx.createBiquadFilter(); humFilter.type = 'lowpass'; humFilter.frequency.value = 400; humFilter.Q.value = 0.7;
       humGain = ctx.createGain(); humGain.gain.value = 0; humFilter.connect(humGain); humGain.connect(master);
-      for (const [f, g] of [[55, .6], [82.6, .35], [110.4, .12]]) {
-        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
-        const og = ctx.createGain(); og.gain.value = g; o.connect(og); og.connect(humFilter); o.start();
-      }
-      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.09; const lg = ctx.createGain(); lg.gain.value = 70;
-      lfo.connect(lg); lg.connect(humFilter.frequency); lfo.start();
+      renderHum(ctx.sampleRate).then((buf) => {
+        if (!buf) return;
+        const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(humFilter); src.start();
+      });
     }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     return ctx;
+  }
+  async function renderHum(rate) {
+    try {
+      const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!OAC) return null;
+      const L = 10, W = 2, off = new OAC(1, rate * (L + W), rate);   // +2 s warm-up so the filter has settled
+      const f = off.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 220; f.Q.value = 2; f.connect(off.destination);
+      for (const [hz, g] of [[55, .6], [82.5, .35], [110.4, .12]]) {   // 550, 825, 1104 cycles in 10 s → seamless
+        const o = off.createOscillator(); o.type = 'sine'; o.frequency.value = hz;
+        const og = off.createGain(); og.gain.value = g; o.connect(og); og.connect(f); o.start();
+      }
+      const lfo = off.createOscillator(); lfo.frequency.value = 0.1; const lg = off.createGain(); lg.gain.value = 70;   // 1 breath per loop
+      lfo.connect(lg); lg.connect(f.frequency); lfo.start();
+      const full = await off.startRendering(), out = new AudioBuffer({ length: rate * L, sampleRate: rate, numberOfChannels: 1 });
+      out.copyToChannel(full.getChannelData(0).subarray(rate * W, rate * (W + L)), 0);   // seconds 2–12: one whole period
+      return out;
+    } catch { return null; }
   }
   // browsers only start audio after a click or tap; the Mac app allows it straight away
   for (const ev of ['pointerdown', 'keydown', 'touchstart']) addEventListener(ev, () => { ensure(); applyAmbient(); }, { passive: true });
@@ -61,7 +78,7 @@
     if (!ctx) return;
     const target = muted || !running ? 0 : Math.min(.05, .018 + running * .006);
     humGain.gain.setTargetAtTime(target, ctx.currentTime, .8);
-    humFilter.frequency.setTargetAtTime(160 + Math.min(running, 6) * 30, ctx.currentTime, 1.2);
+    humFilter.frequency.setTargetAtTime(260 + Math.min(running, 6) * 40, ctx.currentTime, 1.2);   // brighter as more runs
   }
   // ticks in step with the pulses (a run line sends a dot about every 0.87 s); none when idle
   function scheduleTicks() {
