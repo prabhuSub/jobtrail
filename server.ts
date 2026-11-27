@@ -396,6 +396,19 @@ async function finish(job: Job) {
   writeFileSync(HIST_FILE, JSON.stringify(history));
 }
 
+// keep only known vitals fields, as finite numbers (the text comes from another Mac and ends up in the page)
+function cleanVitals(raw?: string): MachineState["vitals"] {
+  let v: any; try { v = raw ? JSON.parse(raw) : undefined; } catch { return undefined; }
+  if (!v || typeof v !== "object") return undefined;
+  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? Math.round(x) : undefined);
+  const arr = (x: unknown) => (Array.isArray(x) ? x.map(n).filter((y): y is number => y !== undefined).slice(0, 4) : undefined);
+  const b = v.batt && typeof v.batt === "object" ? { pct: n(v.batt.pct), ac: v.batt.ac === true, charging: v.batt.charging === true, health: n(v.batt.health),
+    cycles: n(v.batt.cycles), temp: n(v.batt.temp), minLeft: n(v.batt.minLeft) } : undefined;
+  return { cpu: n(v.cpu), cpuT: n(v.cpuT), cpuTMax: n(v.cpuTMax), fans: arr(v.fans), fanMax: arr(v.fanMax),
+    therm: ["nominal", "fair", "serious", "critical"].includes(v.therm) ? v.therm : undefined,
+    diskFreeGB: n(v.diskFreeGB), diskGB: n(v.diskGB), upSec: n(v.upSec), batt: b };
+}
+
 async function poll(machine: MachineId) {
   const m = machines[machine]!;
   // a fresh connection (first check, or after the network changed) can take a while; checks over a live one are quick
@@ -416,7 +429,7 @@ async function poll(machine: MachineId) {
     memFree: meta.MEM ? parseInt(meta.MEM) : undefined, load: meta.LOAD?.replace(/[{}]/g, "").trim().split(/\s+/)[0],
     // battery (laptops only; a Mac mini reports nothing): "71%; discharging" / "100%; charged"
     battery: meta.BATT ? parseInt(meta.BATT) : undefined, charging: meta.BATT ? /(^|; )(charging|charged|finishing charge|AC attached)/.test(meta.BATT) : undefined,
-    vitals: (() => { try { return meta.VIT ? JSON.parse(meta.VIT) : undefined; } catch { return undefined; } })() });
+    vitals: cleanVitals(meta.VIT) });
   const jobs = buildJobs(machine, procs, now);
   // ps elapsed time has 1 s jitter: keep the id of the same pid if its start time is within 90 s
   for (const j of jobs) {
