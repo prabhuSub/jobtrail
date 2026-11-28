@@ -2,12 +2,13 @@
 // (no sound files). While anything runs: a very low hum and soft ticks in step with the pulses. Events: a rising
 // blip when a job starts, a two-note chime when one finishes, a low soft tone when one fails, tiny clicks for the UI.
 // Nothing running = silence. Muted state is remembered per device. Paused while the page is hidden.
-// Three profiles (remembered per device): Classic (above, the default), Beige PC 2000s (PC-speaker beeps, a tiny
-// tick on each pulse) and Sound card 1990s (FM-synth bloops, a soft blip on each pulse).
+// Four profiles (remembered per device): Classic (above, the default), Beige PC 2000s (PC-speaker beeps; its own
+// steady tick-tock clock), Sound card 1990s (FM-synth bloops, a soft blip on each pulse) and Terminal
+// (Matrix-style text blips; an uneven data trickle of its own).
 (() => {
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   let ctx = null, master = null, humGain = null, humFilter = null, muted = store.get('jt.muted') === '1';
-  const NAMES = { classic: 'Classic', beige: 'Beige PC · 2000s', nineties: 'Sound card · 1990s' };
+  const NAMES = { classic: 'Classic', beige: 'Beige PC · 2000s', nineties: 'Sound card · 1990s', term: 'Terminal' };
   let profile = NAMES[store.get('jt.soundProfile')] ? store.get('jt.soundProfile') : 'classic';
   let running = 0, writing = 0, known = null, tickTimer = null;
   const PENTA = [0, 2, 4, 7, 9, 12, 14]; // soft pentatonic steps for the ticks
@@ -83,7 +84,10 @@
     g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + .006); g.gain.setValueAtTime(gain, t + dur * .3); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
     m.connect(mg); mg.connect(c.frequency); c.connect(g); g.connect(master); m.start(t); c.start(t); m.stop(t + dur + .05); c.stop(t + dur + .05);
   }
-  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  const pick = (a) => a[Math.floor(Math.random() * a.length)], rnd = (a, b) => a + Math.random() * (b - a);
+  // Terminal: one printed character = a very short high blip; a line = a run of them at typing speed
+  function chr(at = 0, gain = .02) { tone(rnd(2400, 3600), { at, dur: .012, gain, attack: .001 }); }
+  function typeLine(n, gain = .022) { let t = 0; for (let i = 0; i < n; i++) { chr(t, gain * rnd(.7, 1)); t += Math.random() < .12 ? rnd(.07, .12) : rnd(.022, .04); } }
 
   // ---- the sounds ----
   const classic = {
@@ -96,17 +100,28 @@
     close() { tone(midi(93), { dur: .04, gain: .012, type: 'square', filter: 2200, glideTo: midi(86) }); },
     tab() { tone(midi(88), { dur: .03, gain: .012, type: 'square', filter: 3000 }); },
   };
+  let beigeSide = 0;   // Beige's tick-tock alternates pitch
   const PROFILES = {
     classic,
-    beige: {   // beeps only: a tiny PC-speaker tick on each pulse while jobs run
-      tick() { beep(midi(84 + pick(PENTA)), 0, .014, .007 + Math.min(.005, running * .001)); },
-      shimmer() { beep(midi(96 + pick(PENTA.slice(0, 4))), 0, .01, .005); },
+    beige: {   // its own clock (scheduleTicks): a steady PC-speaker tick-tock on two fixed pitches
+      tick() { beep(beigeSide ? 1319 : 1760, 0, .022, .009 + Math.min(.006, running * .001)); beigeSide ^= 1; },
+      shimmer() { beep(2637, 0, .012, .006); beep(2637, .05, .012, .006); },
       start() { beep(1000, 0, .11); },
       done() { beep(988, 0, .09); beep(1319, .13, .16); },
       fail() { beep(392, 0, .12, .026); beep(392, .19, .12, .026); beep(294, .38, .3, .028); },
       open() { beep(2093, 0, .018, .012); },
       close() { beep(1568, 0, .018, .01); },
       tab() { beep(1760, 0, .012, .01); },
+    },
+    term: {   // Matrix-style (original synth): its own uneven trickle (scheduleTicks); writing = short lines typing out
+      tick() { if (Math.random() < .75) { const n = 1 + Math.floor(Math.random() * 3), g = .01 + Math.min(running, 6) * .0015; for (let i = 0; i < n; i++) chr(i * rnd(.03, .07), g); } },
+      shimmer() { typeLine(6 + Math.floor(Math.random() * 14), .014); },
+      start() { typeLine(14); },
+      done() { typeLine(6); tone(midi(64), { at: .32, dur: .35, gain: .03 }); tone(midi(76), { at: .32, dur: .35, gain: .012 }); },
+      fail() { for (let i = 0; i < 6; i++) tone(rnd(700, 1100), { at: i * .045, dur: .04, gain: .02, type: 'square', filter: 2500 }); tone(midi(45), { at: .3, dur: .5, gain: .035, type: 'sawtooth', filter: 700, glideTo: midi(38) }); },
+      open() { chr(0, .03); chr(.035, .02); },
+      close() { chr(0, .02); },
+      tab() { chr(0, .025); },
     },
     nineties: {
       tick() { fm(midi(60 + pick(PENTA.slice(0, 5))), { dur: .12, gain: .012 + Math.min(.008, running * .0015), ratio: 2, index: 1.5 }); },
@@ -129,13 +144,25 @@
     humFilter.frequency.setTargetAtTime(260 + Math.min(running, 6) * 40, ctx.currentTime, 1.2);   // brighter as more runs
   }
   // ticks in step with the pulses (a run line sends a dot about every 0.87 s); none when idle
+  // when the next background sound plays: Classic and 1990s follow the map's pulses (~0.87 s); Beige keeps its own
+  // slower steady clock; Terminal trickles at uneven moments with now and then a long quiet spell
+  function gap() {
+    const busy = Math.min(running, 6);
+    if (profile === 'beige') return Math.max(1100, 1600 - busy * 90) + rnd(-40, 40);
+    if (profile === 'term') return Math.random() < .15 ? rnd(2500, 5000) : rnd(250, 2200) / (1 + busy * .35);
+    return 870 + rnd(-80, 80);
+  }
   function scheduleTicks() {
     clearTimeout(tickTimer);
     if (!running || muted) return;
     tickTimer = setTimeout(() => {
-      if (!document.hidden) { S.tick(); if (writing && Math.random() < .5) setTimeout(S.shimmer, 180); }
+      if (!document.hidden) {
+        S.tick();
+        if (profile === 'term') { if (writing && Math.random() < .4) setTimeout(S.shimmer, rnd(200, 600)); }
+        else if (writing && Math.random() < .5) setTimeout(S.shimmer, profile === 'beige' ? 500 : 180);
+      }
       scheduleTicks();
-    }, 870 + (Math.random() * 160 - 80));
+    }, gap());
   }
 
   // compare each live snapshot with the last one to hear starts, finishes and failures
