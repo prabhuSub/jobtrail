@@ -2,6 +2,8 @@
 
 **See what every Claude Code chat is running, live, on your Mac and on a second Mac over ssh.**
 
+[![Sponsor JobTrail](https://img.shields.io/badge/Sponsor-JobTrail-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/prabhuSub)
+
 JobTrail is a small macOS app (and phone web app) that shows one live, animated map of your coding agents:
 
 ```
