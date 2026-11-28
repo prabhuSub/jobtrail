@@ -7,3 +7,6 @@ node_modules/
 .DS_Store
 *.part
 vitals/jtvitals
+
+# private, lives in the jobtrail-wallpapers repo
+wallpapers/
