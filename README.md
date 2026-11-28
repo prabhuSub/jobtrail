@@ -130,6 +130,10 @@ launchctl bootout gui/$(id -u)/local.jobtrail.server
 rm -rf ~/Applications/JobTrail.app ~/Library/LaunchAgents/local.jobtrail.*.plist ~/.jobtrail
 ```
 
+## Support JobTrail
+
+JobTrail is free and stays free. If it saves you time, you can [sponsor it on GitHub](https://github.com/sponsors/prabhuSub). It pays for the Apple fee for a signed, double-click-to-install build and for new features.
+
 ## License
 
 MIT. Fork it, rename it, make it your own.
