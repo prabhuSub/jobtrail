@@ -2,9 +2,13 @@
 // (no sound files). While anything runs: a very low hum and soft ticks in step with the pulses. Events: a rising
 // blip when a job starts, a two-note chime when one finishes, a low soft tone when one fails, tiny clicks for the UI.
 // Nothing running = silence. Muted state is remembered per device. Paused while the page is hidden.
+// Three profiles (remembered per device): Classic (above, the default), Beige PC 2000s (PC-speaker beeps only,
+// silent while running) and Sound card 1990s (FM-synth bloops, a sparse soft blip while running).
 (() => {
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   let ctx = null, master = null, humGain = null, humFilter = null, muted = store.get('jt.muted') === '1';
+  const NAMES = { classic: 'Classic', beige: 'Beige PC · 2000s', nineties: 'Sound card · 1990s' };
+  let profile = NAMES[store.get('jt.soundProfile')] ? store.get('jt.soundProfile') : 'classic';
   let running = 0, writing = 0, known = null, tickTimer = null;
   const PENTA = [0, 2, 4, 7, 9, 12, 14]; // soft pentatonic steps for the ticks
   const VOL = 0.55; // overall level (everything is quiet on top of this)
@@ -60,9 +64,29 @@
     node.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .05);
   }
   const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+  // PC speaker: square wave, instant on/off, slightly muffled by the case
+  function beep(freq, at = 0, dur = .09, gain = .022) {
+    if (!ensure() || muted) return;
+    const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
+    o.type = 'square'; o.frequency.value = freq; f.type = 'lowpass'; f.frequency.value = 3200;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + .002); g.gain.setValueAtTime(gain, t + dur - .003); g.gain.linearRampToValueAtTime(0, t + dur);
+    o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .02);
+  }
+  // 1990s sound card (OPL-style FM): a sine carrier wobbled by a sine modulator whose depth decays, so notes go
+  // from bright to round. ratio picks the timbre: 1 = brass/organ, 2 = bell, 3.5 = clangy
+  function fm(freq, { at = 0, dur = .18, gain = .03, ratio = 1, index = 3, glideTo = null } = {}) {
+    if (!ensure() || muted) return;
+    const t = ctx.currentTime + at, c = ctx.createOscillator(), m = ctx.createOscillator(), mg = ctx.createGain(), g = ctx.createGain();
+    c.frequency.setValueAtTime(freq, t); m.frequency.setValueAtTime(freq * ratio, t);
+    if (glideTo) { c.frequency.exponentialRampToValueAtTime(glideTo, t + dur); m.frequency.exponentialRampToValueAtTime(glideTo * ratio, t + dur); }
+    mg.gain.setValueAtTime(freq * index, t); mg.gain.exponentialRampToValueAtTime(freq * .2 + 1, t + dur);
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + .006); g.gain.setValueAtTime(gain, t + dur * .3); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    m.connect(mg); mg.connect(c.frequency); c.connect(g); g.connect(master); m.start(t); c.start(t); m.stop(t + dur + .05); c.stop(t + dur + .05);
+  }
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
   // ---- the sounds ----
-  const S = {
+  const classic = {
     tick() { const n = 84 + PENTA[Math.floor(Math.random() * PENTA.length)]; tone(midi(n), { dur: .07, gain: .012 + Math.min(.01, running * .002), type: 'sine' }); },
     shimmer() { tone(midi(96 + PENTA[Math.floor(Math.random() * 4)]), { dur: .05, gain: .006, type: 'triangle', filter: 6000 }); },
     start() { tone(midi(76), { dur: .14, gain: .028 }); tone(midi(83), { at: .07, dur: .2, gain: .024 }); },
@@ -72,11 +96,34 @@
     close() { tone(midi(93), { dur: .04, gain: .012, type: 'square', filter: 2200, glideTo: midi(86) }); },
     tab() { tone(midi(88), { dur: .03, gain: .012, type: 'square', filter: 3000 }); },
   };
+  const PROFILES = {
+    classic,
+    beige: {   // beeps only: nothing plays while jobs run
+      tick() {}, shimmer() {},
+      start() { beep(1000, 0, .11); },
+      done() { beep(988, 0, .09); beep(1319, .13, .16); },
+      fail() { beep(392, 0, .12, .026); beep(392, .19, .12, .026); beep(294, .38, .3, .028); },
+      open() { beep(2093, 0, .018, .012); },
+      close() { beep(1568, 0, .018, .01); },
+      tab() { beep(1760, 0, .012, .01); },
+    },
+    nineties: {
+      tick() { if (Math.random() < .45) fm(midi(60 + pick(PENTA.slice(0, 5))), { dur: .12, gain: .012 + Math.min(.008, running * .0015), ratio: 2, index: 1.5 }); },
+      shimmer() { fm(midi(84 + pick(PENTA.slice(0, 4))), { dur: .06, gain: .007, ratio: 3.5, index: 1 }); },
+      start() { fm(midi(67), { dur: .12, gain: .03, ratio: 1, index: 2.5 }); fm(midi(74), { at: .09, dur: .2, gain: .028, ratio: 1, index: 2.5 }); },
+      done() { [72, 76, 79, 84].forEach((n, i) => fm(midi(n), { at: i * .075, dur: i === 3 ? .45 : .14, gain: .028, ratio: 2, index: 2 })); },
+      fail() { fm(midi(55), { dur: .22, gain: .035, ratio: 1, index: 4 }); fm(midi(50), { at: .2, dur: .55, gain: .035, ratio: 1, index: 4, glideTo: midi(43) }); },
+      open() { fm(midi(88), { dur: .07, gain: .018, ratio: 2, index: 1.5 }); },
+      close() { fm(midi(83), { dur: .07, gain: .015, ratio: 2, index: 1.5, glideTo: midi(79) }); },
+      tab() { fm(midi(91), { dur: .045, gain: .014, ratio: 3.5, index: 1 }); },
+    },
+  };
+  const S = new Proxy({}, { get: (_, k) => PROFILES[profile][k] });   // S.done() etc. play the chosen profile
 
   // hum level follows how much is running; silence when nothing is
   function applyAmbient() {
     if (!ctx) return;
-    const target = muted || !running ? 0 : Math.min(.05, .018 + running * .006);
+    const target = muted || !running || profile !== 'classic' ? 0 : Math.min(.05, .018 + running * .006);
     humGain.gain.setTargetAtTime(target, ctx.currentTime, .8);
     humFilter.frequency.setTargetAtTime(260 + Math.min(running, 6) * 40, ctx.currentTime, 1.2);   // brighter as more runs
   }
@@ -117,9 +164,17 @@
   }
   document.addEventListener('visibilitychange', () => { if (ctx) master.gain.setTargetAtTime(muted || document.hidden ? 0 : VOL, ctx.currentTime, .2); });
 
+  function setProfile(p) {
+    if (!NAMES[p]) return;
+    profile = p; store.set('jt.soundProfile', p); ensure(); applyAmbient(); scheduleTicks();
+    if (muted) setMuted(false); S.done();   // play a sample so the choice is heard
+    document.querySelectorAll('[data-sound-profile]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.soundProfile === p)));
+  }
+
   window.Sound = {
+    get profile() { return profile; }, profiles: NAMES, setProfile,
     update, ui: (name) => S[name]?.(), toggle: () => { ensure(); setMuted(!muted); if (!muted) S.tab(); },
     get muted() { return muted; }, init: () => setMuted(muted),
-    get state() { return { engine: ctx ? ctx.state : 'not started', running, hum: humGain ? +humGain.gain.value.toFixed(4) : 0, out: master ? +master.gain.value.toFixed(3) : 0 }; },
+    get state() { return { engine: ctx ? ctx.state : 'not started', profile, running, hum: humGain ? +humGain.gain.value.toFixed(4) : 0, out: master ? +master.gain.value.toFixed(3) : 0 }; },
   };
 })();

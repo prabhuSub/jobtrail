@@ -378,6 +378,14 @@ html.resizing .mn,html.resizing .mn *{transition:none!important}
 .sndbtn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .sndbtn .x{display:none}.sndbtn.off{color:var(--faint)}.sndbtn.off .w{display:none}.sndbtn.off .x{display:inline}
 .sndbtn:hover{color:var(--text)}
+.sndwrap{position:relative;display:flex}.sndwrap .sndbtn{border-radius:8px 0 0 8px}
+.sndprof{display:grid;place-items:center;width:18px;height:24px;padding:0;border:1px solid var(--line);border-left:0;background:var(--surface);color:var(--dim);border-radius:0 8px 8px 0;cursor:pointer}
+.sndprof svg{width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.sndprof:hover{color:var(--text)}
+.sndmenu{position:absolute;top:30px;right:0;z-index:50;min-width:190px;padding:6px;background:var(--raised);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.sndmenu .h{font:500 11px/16px var(--font);color:var(--faint);padding:4px 8px 6px;letter-spacing:.04em;text-transform:uppercase}
+.sndmenu button{display:flex;align-items:center;gap:8px;width:100%;padding:7px 8px;border:0;border-radius:6px;background:none;color:var(--soft);font:500 13px/16px var(--font);text-align:left;cursor:pointer}
+.sndmenu button:hover{background:var(--hover);color:var(--text)}
+.sndmenu button::before{content:"";width:6px;height:6px;border-radius:50%;flex:none}.sndmenu button[aria-checked="true"]{color:var(--text)}.sndmenu button[aria-checked="true"]::before{background:var(--accent)}
 .mn.zone.reconn{border-color:rgba(233,162,59,.45)}
 .mn.zone.reconn .zdot{background:var(--accent);animation:pulse 1.2s ease-in-out infinite}
 .zempty.reconn{color:var(--accent)}
@@ -391,7 +399,7 @@ html.resizing .mn,html.resizing .mn *{transition:none!important}
     <div style="min-width:0"><div class="project-name">JobTrail</div><div class="file-name">What every Claude Code chat is running, live</div></div>
   </div>
   <nav class="switcher" id="tabs"></nav>
-  <div class="status"><button class="sndbtn" data-sound-btn onclick="Sound.toggle()" aria-label="Sound" title="Sound on · click to mute"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="w" d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/><path class="x" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><button class="phonebtn" id="phoneBtn" hidden onclick="showPhone()">iPhone</button><div class="badge" id="runBadge"><span class="dot"></span><span>—</span></div><div class="watching" id="watch">connecting…</div></div>
+  <div class="status"><div class="sndwrap"><button class="sndbtn" data-sound-btn onclick="Sound.toggle()" aria-label="Sound" title="Sound on · click to mute"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="w" d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/><path class="x" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><button class="sndprof" id="sndProf" onclick="sndMenu(event)" aria-label="Sound profile" title="Sound profile" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3"/></svg></button><div class="sndmenu" id="sndMenu" role="menu" hidden></div></div><button class="phonebtn" id="phoneBtn" hidden onclick="showPhone()">iPhone</button><div class="badge" id="runBadge"><span class="dot"></span><span>—</span></div><div class="watching" id="watch">connecting…</div></div>
 </header>
 <section class="map" id="map"></section>
 <div class="split" id="split" title="Drag to resize the map and the list (double-click to reset)"><span></span></div>
@@ -565,6 +573,13 @@ setInterval(tick,1000);
 setInterval(()=>{for(const id of open)fetchDetail(id)},3000);
 JobMap.init(document.getElementById('map'),pick);
 Sound.init();
+function sndMenu(e){e.stopPropagation();const m=document.getElementById('sndMenu'),b=document.getElementById('sndProf');
+  if(!m.hidden){m.hidden=true;b.setAttribute('aria-expanded','false');return}
+  m.innerHTML='<div class="h">Sound profile</div>'+Object.entries(Sound.profiles).map(([k,n])=>`<button role="menuitemradio" data-sound-profile="${k}" aria-checked="${k===Sound.profile}">${n}</button>`).join('');
+  m.querySelectorAll('button').forEach(x=>x.onclick=(ev)=>{ev.stopPropagation();Sound.setProfile(x.dataset.soundProfile)});
+  m.style.left='';m.style.right='';m.hidden=false;if(m.getBoundingClientRect().left<8){m.style.left='0';m.style.right='auto'}b.setAttribute('aria-expanded','true')}
+addEventListener('click',()=>{const m=document.getElementById('sndMenu');if(m&&!m.hidden){m.hidden=true;document.getElementById('sndProf').setAttribute('aria-expanded','false')}});
+addEventListener('keydown',(e)=>{if(e.key==='Escape'){const m=document.getElementById('sndMenu');if(m)m.hidden=true}});
 // resizable top/bottom halves: drag the bar under the map; remembered per Mac
 (()=>{const map=document.getElementById('map'),bar=document.getElementById('split'),html=document.documentElement;
   const clamp=h=>Math.round(Math.max(300,Math.min(innerHeight-140,h)));
