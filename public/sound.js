@@ -2,8 +2,8 @@
 // (no sound files). While anything runs: a very low hum and soft ticks in step with the pulses. Events: a rising
 // blip when a job starts, a two-note chime when one finishes, a low soft tone when one fails, tiny clicks for the UI.
 // Nothing running = silence. Muted state is remembered per device. Paused while the page is hidden.
-// Three profiles (remembered per device): Classic (above, the default), Beige PC 2000s (PC-speaker beeps only,
-// silent while running) and Sound card 1990s (FM-synth bloops, a sparse soft blip while running).
+// Three profiles (remembered per device): Classic (above, the default), Beige PC 2000s (PC-speaker beeps, a tiny
+// tick on each pulse) and Sound card 1990s (FM-synth bloops, a soft blip on each pulse).
 (() => {
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   let ctx = null, master = null, humGain = null, humFilter = null, muted = store.get('jt.muted') === '1';
@@ -98,8 +98,9 @@
   };
   const PROFILES = {
     classic,
-    beige: {   // beeps only: nothing plays while jobs run
-      tick() {}, shimmer() {},
+    beige: {   // beeps only: a tiny PC-speaker tick on each pulse while jobs run
+      tick() { beep(midi(84 + pick(PENTA)), 0, .014, .007 + Math.min(.005, running * .001)); },
+      shimmer() { beep(midi(96 + pick(PENTA.slice(0, 4))), 0, .01, .005); },
       start() { beep(1000, 0, .11); },
       done() { beep(988, 0, .09); beep(1319, .13, .16); },
       fail() { beep(392, 0, .12, .026); beep(392, .19, .12, .026); beep(294, .38, .3, .028); },
@@ -108,7 +109,7 @@
       tab() { beep(1760, 0, .012, .01); },
     },
     nineties: {
-      tick() { if (Math.random() < .45) fm(midi(60 + pick(PENTA.slice(0, 5))), { dur: .12, gain: .012 + Math.min(.008, running * .0015), ratio: 2, index: 1.5 }); },
+      tick() { fm(midi(60 + pick(PENTA.slice(0, 5))), { dur: .12, gain: .012 + Math.min(.008, running * .0015), ratio: 2, index: 1.5 }); },
       shimmer() { fm(midi(84 + pick(PENTA.slice(0, 4))), { dur: .06, gain: .007, ratio: 3.5, index: 1 }); },
       start() { fm(midi(67), { dur: .12, gain: .03, ratio: 1, index: 2.5 }); fm(midi(74), { at: .09, dur: .2, gain: .028, ratio: 1, index: 2.5 }); },
       done() { [72, 76, 79, 84].forEach((n, i) => fm(midi(n), { at: i * .075, dur: i === 3 ? .45 : .14, gain: .028, ratio: 2, index: 2 })); },
